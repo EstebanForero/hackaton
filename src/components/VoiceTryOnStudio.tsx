@@ -501,12 +501,12 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
     (prompt: string, immediateProducts: Product[] = []) => {
       const photoDataUrl = capturePhoto()
       const finalOutfit = buildRenderableOutfit(
-        selectedOutfitRef.current,
+        selectedOutfit.length ? selectedOutfit : selectedOutfitRef.current,
         immediateProducts,
       )
 
       if (!photoDataUrl || !finalOutfit.length) {
-        const selectedCount = selectedOutfitRef.current.length
+        const selectedCount = selectedOutfit.length || selectedOutfitRef.current.length
         const immediateCount = immediateProducts.length
         const cameraState = cameraReadyRef.current ? 'ready' : 'not ready'
         const message = !photoDataUrl
@@ -538,7 +538,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
         photoDataUrl,
       })
     },
-    [appendLiveEvent, capturePhoto, speak, tryOnMutation],
+    [appendLiveEvent, capturePhoto, selectedOutfit, speak, tryOnMutation],
   )
 
   const sendLiveToolResponse = React.useCallback(
@@ -1029,32 +1029,14 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
         {tryOnResult ? (
           <div className="camera-try-on-preview" aria-live="polite">
             <img src={tryOnResult.imageUrl} alt="Virtual try-on preview" />
-            <div className="camera-preview-card">
-              <div className={`try-on-status ${tryOnResult.status}`}>
-                {tryOnResult.status === 'generated'
-                  ? 'Generated image'
-                  : tryOnResult.status === 'mock'
-                    ? 'API key missing'
-                    : 'Generation failed'}
-              </div>
-              <strong>{tryOnResult.message}</strong>
-              <span>Say “show me another option” or choose another product to return to camera.</span>
-              {tryOnResult.references.length ? (
-                <div className="preview-references" aria-label="Garment references sent to image model">
-                  {tryOnResult.references.map((reference) => (
-                    <img
-                      key={reference.id}
-                      src={reference.imageUrl}
-                      alt={`${reference.name} reference sent to image model`}
-                      title={reference.name}
-                    />
-                  ))}
-                </div>
-              ) : null}
-              <button type="button" onClick={() => setTryOnResult(null)}>
-                Back to camera
-              </button>
-            </div>
+            <button
+              className="camera-return-button"
+              type="button"
+              onClick={() => setTryOnResult(null)}
+              aria-label="Return to camera"
+            >
+              Camera
+            </button>
           </div>
         ) : null}
         <canvas ref={canvasRef} hidden />
