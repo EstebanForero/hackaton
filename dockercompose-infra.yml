@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:18.3-alpine
+    container_name: atelier-ai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: atelier
+      POSTGRES_PASSWORD: atelier
+      POSTGRES_DB: atelier_store
+    ports:
+      - "5432:5432"
+    volumes:
+      - atelier-postgres-18-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atelier -d atelier_store"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  atelier-postgres-18-data:

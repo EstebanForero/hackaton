@@ -1,0 +1,46 @@
+{
+  "name": "atelier-ai-store",
+  "private": true,
+  "sideEffects": false,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run db:bootstrap && vite dev --port 3000",
+    "build": "vite build && tsc --noEmit",
+    "preview": "vite preview",
+    "start": "node .output/server/index.mjs",
+    "db:bootstrap": "bun src/db/bootstrap.ts",
+    "db:migrate": "bun src/db/migrate.ts",
+    "db:seed": "bun src/db/seed.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@google/genai": "^1.50.1",
+    "@tanstack/react-devtools": "^0.10.2",
+    "@tanstack/react-query": "^5.90.0",
+    "@tanstack/react-query-devtools": "^5.90.0",
+    "@tanstack/react-router": "^1.168.23",
+    "@tanstack/react-router-devtools": "^1.166.13",
+    "@tanstack/react-router-ssr-query": "^1.166.11",
+    "@tanstack/react-start": "^1.167.43",
+    "drizzle-orm": "^0.44.7",
+    "pg": "^8.16.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@tanstack/devtools-vite": "^0.6.0",
+    "@types/node": "^22.5.4",
+    "@types/pg": "^8.15.6",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "drizzle-kit": "^0.31.5",
+    "nitro": "^3.0.260311-beta",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.0"
+  }
+}
