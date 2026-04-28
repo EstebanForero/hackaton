@@ -262,17 +262,16 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       photoDataUrl: string
     }) => createVirtualTryOn({ data: input }),
     onSuccess: (result) => {
-      const feedbackQuestion =
+      const completionMessage =
         result.status === 'generated'
-          ? 'How do you feel about this look? Would you keep it, or should I try a different direction?'
+          ? 'Try-on image ready.'
           : result.message
       setTryOnResult(result)
       setRenderDebugStatus(result.message)
-      setAssistantReply(feedbackQuestion)
-      awaitingTryOnFeedbackRef.current = result.status === 'generated'
+      setAssistantReply(completionMessage)
+      awaitingTryOnFeedbackRef.current = false
       suppressLiveAudioRef.current = false
       setLiveProcessingLabel('')
-      speak(feedbackQuestion)
       appendLiveEvent(
         `Try-on returned ${result.status}; references: ${result.references
           .map((reference) => reference.name)
@@ -583,7 +582,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       )
       setTryOnResult(null)
       setAssistantReply(message)
-      speak(message)
+      if (!liveSessionRef.current) speak(message)
       tryOnMutation.mutate({
         productIds: finalOutfit.map((product) => product.id),
         prompt,
@@ -1320,13 +1319,17 @@ function localizedToolAck(
   const productNames = products.map((product) => product.name).join(', ')
 
   if (language === 'es') {
-    if (toolName === 'add_items') return `Listo, agregué ${productNames} al outfit.`
+    if (toolName === 'add_items') {
+      return `Listo, agregué ${productNames} al outfit. Te ayudo en la siguiente tienda.`
+    }
     if (toolName === 'expand_item') return `Listo, te muestro ${productNames} más grande.`
     if (toolName === 'clear_outfit') return 'Listo, limpié el outfit.'
     return 'Listo.'
   }
 
-  if (toolName === 'add_items') return `Done, I added ${productNames} to the outfit.`
+  if (toolName === 'add_items') {
+    return `Done, I added ${productNames} to the outfit. I will help you in the next shop.`
+  }
   if (toolName === 'expand_item') return `Done, opening ${productNames}.`
   if (toolName === 'clear_outfit') return 'Done, I cleared the outfit.'
   return 'Done.'
