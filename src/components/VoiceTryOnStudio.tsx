@@ -570,7 +570,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
           ? `Estoy tomando la foto y preparando el probador virtual con ${outfitNames}. Espera un momento mientras termina de renderizarse el outfit.`
           : `Taking a photo and preparing a virtual try-on with ${outfitNames}. Please wait a moment while the outfit finishes rendering.`
       setExpandedProduct(null)
-      suppressLiveAudioRef.current = true
+      suppressLiveAudioRef.current = false
       awaitingTryOnFeedbackRef.current = false
       setLiveProcessingLabel('Rendering outfit')
       setRenderDebugStatus(
@@ -1320,7 +1320,7 @@ function localizedToolAck(
 
   if (language === 'es') {
     if (toolName === 'add_items') {
-      return `Listo, agregué ${productNames} al outfit. Te ayudo en la siguiente tienda.`
+      return `Listo, agregué ${productNames} al outfit. Nos vemos en tu siguiente compra.`
     }
     if (toolName === 'expand_item') return `Listo, te muestro ${productNames} más grande.`
     if (toolName === 'clear_outfit') return 'Listo, limpié el outfit.'
@@ -1328,7 +1328,7 @@ function localizedToolAck(
   }
 
   if (toolName === 'add_items') {
-    return `Done, I added ${productNames} to the outfit. I will help you in the next shop.`
+    return `Done, I added ${productNames} to the outfit. See you on your next shop.`
   }
   if (toolName === 'expand_item') return `Done, opening ${productNames}.`
   if (toolName === 'clear_outfit') return 'Done, I cleared the outfit.'
