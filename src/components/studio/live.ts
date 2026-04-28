@@ -31,7 +31,10 @@ ${catalog}
 `.trim()
 }
 
-export function buildLiveTools(Type: typeof import('@google/genai').Type) {
+export function buildLiveTools(
+  Type: typeof import('@google/genai').Type,
+  Behavior?: typeof import('@google/genai').Behavior,
+) {
   const productIdsSchema = {
     type: Type.OBJECT,
     properties: {
@@ -47,24 +50,28 @@ export function buildLiveTools(Type: typeof import('@google/genai').Type) {
     functionDeclarations: [
       {
         name: 'show_items',
+        behavior: Behavior?.NON_BLOCKING,
         description:
           'Show products on the kiosk screen as search results or alternatives.',
         parameters: productIdsSchema,
       },
       {
         name: 'add_items',
+        behavior: Behavior?.NON_BLOCKING,
         description:
           'Add selected products to the outfit board. Same-category products become alternatives.',
         parameters: productIdsSchema,
       },
       {
         name: 'expand_item',
+        behavior: Behavior?.NON_BLOCKING,
         description:
           'Expand one product on the camera view. Use when the user asks to see it better, bigger, closer, zoomed, opened, or with details.',
         parameters: productIdsSchema,
       },
       {
         name: 'clear_outfit',
+        behavior: Behavior?.NON_BLOCKING,
         description: 'Clear the current outfit board.',
         parameters: {
           type: Type.OBJECT,
@@ -73,6 +80,7 @@ export function buildLiveTools(Type: typeof import('@google/genai').Type) {
       },
       {
         name: 'render_try_on',
+        behavior: Behavior?.NON_BLOCKING,
         description:
           'Take the current camera frame and generate the try-on using the selected outfit.',
         parameters: {

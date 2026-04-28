@@ -50,9 +50,9 @@ export function resampleFloat32ToPcm16(
     const left = input[leftIndex] ?? 0
     const right = input[rightIndex] ?? left
     const interpolated = left + (right - left) * fraction
-    const cleaned = Math.abs(interpolated) < 0.0025 ? 0 : interpolated
-    const sample = Math.max(-0.98, Math.min(0.98, cleaned * 1.12))
-    output[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff
+    const cleaned = Math.abs(interpolated) < 0.0015 ? 0 : interpolated
+    const sample = softLimit(cleaned * 1.03)
+    output[i] = Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7fff)
   }
 
   return output
@@ -66,6 +66,10 @@ export function readRms(input: Float32Array) {
   }
 
   return Math.sqrt(sum / input.length)
+}
+
+function softLimit(sample: number) {
+  return Math.tanh(Math.max(-1.4, Math.min(1.4, sample)))
 }
 
 export function arrayBufferToBase64(buffer: ArrayBuffer) {
@@ -102,7 +106,7 @@ export function playLivePcm(
   const pcm = base64ToInt16Array(base64Pcm)
 
   if (sourceSampleRate === targetSampleRate) {
-    player.playAudio(pcm)
+    player.playAudio(applyPcmFade(pcm))
     queueEndTimeRef.current =
       Math.max(queueEndTimeRef.current, context.currentTime) +
       pcm.length / targetSampleRate
@@ -114,11 +118,41 @@ export function playLivePcm(
     sourceSampleRate,
     targetSampleRate,
   )
-  player.playAudio(resampled)
+  player.playAudio(applyFloatFade(resampled))
   queueEndTimeRef.current =
     Math.max(queueEndTimeRef.current, context.currentTime) +
     resampled.length / targetSampleRate
   return Math.max(0, queueEndTimeRef.current - context.currentTime)
+}
+
+function applyPcmFade(input: Int16Array) {
+  const output = new Int16Array(input)
+  const fadeSamples = Math.min(96, Math.floor(output.length / 2))
+
+  for (let i = 0; i < fadeSamples; i += 1) {
+    const inGain = i / fadeSamples
+    const outGain = (fadeSamples - i - 1) / fadeSamples
+    output[i] = Math.round(output[i] * inGain)
+    output[output.length - i - 1] = Math.round(
+      output[output.length - i - 1] * outGain,
+    )
+  }
+
+  return output
+}
+
+function applyFloatFade(input: Float32Array) {
+  const output = new Float32Array(input)
+  const fadeSamples = Math.min(96, Math.floor(output.length / 2))
+
+  for (let i = 0; i < fadeSamples; i += 1) {
+    const inGain = i / fadeSamples
+    const outGain = (fadeSamples - i - 1) / fadeSamples
+    output[i] *= inGain
+    output[output.length - i - 1] *= outGain
+  }
+
+  return output
 }
 
 export function blobToDataUrl(blob: Blob) {

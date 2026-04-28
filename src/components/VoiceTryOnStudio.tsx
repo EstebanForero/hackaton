@@ -569,12 +569,14 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       functionCall: { id?: string; name?: string },
       productIds: string[],
       output: Record<string, unknown>,
+      scheduling?: string,
     ) => {
       liveSessionRef.current?.sendToolResponse({
         functionResponses: [
           {
             id: functionCall.id,
             name: functionCall.name,
+            scheduling,
             response: {
               output: {
                 ...output,
@@ -605,7 +607,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
           ok: true,
           duplicate: true,
           skippedEffect: true,
-        })
+        }, 'SILENT')
         return
       }
 
@@ -639,7 +641,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
         requestTryOn('Render the current live-selected outfit.', matchedProducts)
       }
 
-      sendLiveToolResponse(functionCall, productIds, { ok: true })
+      sendLiveToolResponse(functionCall, productIds, { ok: true }, 'WHEN_IDLE')
     },
     [addMatchesToOutfit, appendLiveEvent, products, requestTryOn, sendLiveToolResponse],
   )
@@ -652,6 +654,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       const [
         {
           ActivityHandling,
+          Behavior,
           EndSensitivity,
           GoogleGenAI,
           Modality,
@@ -698,7 +701,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
           systemInstruction: {
             parts: [{ text: buildLiveSystemInstruction(products) }],
           },
-          tools: [buildLiveTools(Type)],
+          tools: [buildLiveTools(Type, Behavior)],
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: tokenResult.voice },
