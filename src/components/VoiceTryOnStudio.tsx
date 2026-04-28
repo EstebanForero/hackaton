@@ -1320,7 +1320,7 @@ function localizedToolAck(
 
   if (language === 'es') {
     if (toolName === 'add_items') {
-      return `Listo, agregué ${productNames} al outfit. Nos vemos en tu siguiente compra.`
+      return `Listo, agregué ${productNames} al outfit.`
     }
     if (toolName === 'expand_item') return `Listo, te muestro ${productNames} más grande.`
     if (toolName === 'clear_outfit') return 'Listo, limpié el outfit.'
@@ -1328,7 +1328,7 @@ function localizedToolAck(
   }
 
   if (toolName === 'add_items') {
-    return `Done, I added ${productNames} to the outfit. See you on your next shop.`
+    return `Done, I added ${productNames} to the outfit.`
   }
   if (toolName === 'expand_item') return `Done, opening ${productNames}.`
   if (toolName === 'clear_outfit') return 'Done, I cleared the outfit.'
