@@ -148,21 +148,30 @@ export function buildTryOnPrompt(
 ) {
   const garmentDescriptions = selectedProducts
     .map(
-      (product) =>
-        `id=${product.id}; category=${product.category}; name=${product.name}; imageUrl=${product.imageUrl}; visual=${product.imageDescription}`,
+      (product, index) =>
+        `REQUIRED_GARMENT_${index + 1}: id=${product.id}; category=${product.category}; name=${product.name}; imageUrl=${product.imageUrl}; visual=${product.imageDescription}`,
     )
-    .join(' ')
+    .join(' | ')
+  const requiredChecklist = selectedProducts
+    .map(
+      (product, index) =>
+        `${index + 1}. ${product.name} (${product.category}) from reference image ${index + 1}`,
+    )
+    .join('; ')
 
   return [
     'Edit the first image, which is the original customer camera photo and the only source for the real person.',
     'Keep the person from the original camera photo the same: same face, hair, skin tone, body shape, proportions, pose, expression, age, identity, lighting, and store scene.',
     'Use the garment reference images only as clothing references. Do not copy the model, face, body, pose, skin, hair, hands, background, or identity from any garment reference image.',
+    'Every selected garment is mandatory. The final image must include all required selected garments that are visible in the camera framing. Do not omit a selected garment, swap it for a different garment, or replace it with a similar generic item.',
+    `Required garment checklist: ${requiredChecklist}`,
     'Use ONLY the selected garment reference images that follow the camera photo for garment design. Do not use memory, brand assumptions, or generic clothing.',
     `Selected garments to apply exactly: ${garmentDescriptions}`,
-    'Transfer the exact visible garment design from each reference image: color, fabric, collar, sleeves, pockets, pattern, buttons, zipper, hem, silhouette, and proportions.',
+    'Transfer the exact visible garment design from each required reference image: color, fabric, collar, sleeves, pockets, pattern, buttons, zipper, hem, silhouette, and proportions.',
     'Place the referenced garments realistically on the person in the camera photo: align to body pose, preserve natural folds, scale, occlusion, and perspective.',
-    'Preserve the real customer identity and camera-photo body exactly; only the clothing should change.',
-    'Do not return the original image unchanged. The output must visibly dress the customer in the selected garment reference images.',
+    'For body areas without a selected garment reference, keep the original camera-photo clothing or visible body unchanged. Do not invent extra clothes, shoes, accessories, logos, or colors.',
+    'Preserve the real customer identity and camera-photo body exactly; only the required selected clothing should change.',
+    'Do not return the original image unchanged. The output must visibly dress the customer in every selected garment reference image.',
     'Use only one final item per outfit group unless the groups are complementary accessories.',
     `Styling instruction from voice assistant: ${userPrompt}`,
   ].join(' ')
@@ -180,15 +189,16 @@ export function buildTryOnReferences(selectedProducts: Product[]) {
 
 function buildCatalogLines(catalog: Product[]) {
   return catalog
-    .map((product) =>
-      [
-        `id=${product.id}`,
-        `name=${product.name}`,
-        `category=${product.category}`,
-        `tags=${product.styleTags.join(', ')}`,
-        `colors=${product.colors.join(', ')}`,
-        `description=${product.shortDescription}`,
-      ].join(' | '),
+    .map(
+      (product) =>
+        [
+          `id=${product.id}`,
+          `name=${product.name}`,
+          `category=${product.category}`,
+          `tags=${product.styleTags.join(', ')}`,
+          `colors=${product.colors.join(', ')}`,
+          `description=${product.shortDescription}`,
+        ].join(' | '),
     )
     .join('\n')
 }

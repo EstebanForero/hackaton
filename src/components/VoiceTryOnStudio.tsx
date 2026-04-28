@@ -544,7 +544,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       }
 
       const outfitNames = finalOutfit.map((product) => product.name).join(', ')
-      const message = `Taking a photo and preparing a virtual try-on with ${outfitNames}.`
+      const message = `Taking a photo and preparing a virtual try-on with ${outfitNames}. Please wait a moment while the outfit finishes rendering.`
       setExpandedProduct(null)
       suppressLiveAudioRef.current = true
       awaitingTryOnFeedbackRef.current = false
@@ -558,7 +558,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       )
       setTryOnResult(null)
       setAssistantReply(message)
-      if (!liveSessionRef.current) speak(message)
+      speak(message)
       tryOnMutation.mutate({
         productIds: finalOutfit.map((product) => product.id),
         prompt,

@@ -90,6 +90,9 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
     const orderedProducts = data.productIds
       .map((productId) => productsById.get(productId))
       .filter((product): product is Product => Boolean(product))
+    if (orderedProducts.length !== data.productIds.length) {
+      throw new Error('One or more selected outfit products were not found')
+    }
     const generationPrompt = buildTryOnPrompt(orderedProducts, data.prompt)
 
     if (!process.env.GEMINI_API_KEY) {
@@ -131,7 +134,7 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
               },
               {
                 text:
-                  'CUSTOMER_CAMERA_IMAGE_END. The following images are exact selected garment references only. Do not use the people, bodies, poses, faces, skin, hair, or backgrounds from reference images. Do not invent product design, pattern, color, logos, pockets, or silhouette beyond these references.',
+                  `CUSTOMER_CAMERA_IMAGE_END. The following ${orderedProducts.length} images are mandatory selected garment references only. Apply every listed garment to the customer if that body area is visible. Do not use the people, bodies, poses, faces, skin, hair, or backgrounds from reference images. Do not invent product design, pattern, color, logos, pockets, or silhouette beyond these references.`,
               },
               ...referenceImages.flatMap((image, index) => {
                 const product = orderedProducts[index]
@@ -139,13 +142,14 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
                 return [
                   {
                     text: [
-                      `GARMENT_REFERENCE_${index + 1}_START`,
+                      `REQUIRED_GARMENT_REFERENCE_${index + 1}_START`,
                       `Selected product id: ${product?.id}`,
                       `Selected product name: ${product?.name}`,
                       `Selected product category: ${product?.category}`,
                       `Selected product image URL: ${product?.imageUrl}`,
                       `Visual description: ${product?.imageDescription}`,
-                      'Use this exact garment image as the source of truth for color, fabric, cut, pockets, collar, pattern, and silhouette.',
+                      'This garment is required in the final output. Use this exact garment image as the source of truth for color, fabric, cut, pockets, collar, pattern, and silhouette.',
+                      'Do not replace this required garment with another catalog item, the original camera clothing, or a generic approximation.',
                     ].join('\n'),
                   },
                   {
@@ -154,9 +158,13 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
                       data: image.base64,
                     },
                   },
-                  { text: `GARMENT_REFERENCE_${index + 1}_END` },
+                  { text: `REQUIRED_GARMENT_REFERENCE_${index + 1}_END` },
                 ]
               }),
+              {
+                text:
+                  'FINAL_RENDER_CHECK: before returning the image, verify every REQUIRED_GARMENT_REFERENCE is present on the customer. If a required garment conflicts with another required garment, keep the most specific visible garment for that body area and do not add unrelated clothing.',
+              },
             ],
           },
         ],
