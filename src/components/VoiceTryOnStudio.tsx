@@ -675,14 +675,14 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
 
       if (functionCall.name === 'add_items') {
         addMatchesToOutfit(resolvedProducts, 'Selected by Gemini Live.')
-        if (resolvedProducts.length) {
+        if (resolvedProducts.length && !liveSessionRef.current) {
           speak(localizedToolAck('add_items', userLanguageRef.current, resolvedProducts))
         }
       }
 
       if (functionCall.name === 'expand_item') {
         setExpandedProduct(resolvedProducts[0] ?? null)
-        if (resolvedProducts.length) {
+        if (resolvedProducts.length && !liveSessionRef.current) {
           speak(localizedToolAck('expand_item', userLanguageRef.current, resolvedProducts))
         }
       }
@@ -692,7 +692,9 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
         setOutfitGroups([])
         setExpandedProduct(null)
         setTryOnResult(null)
-        speak(localizedToolAck('clear_outfit', userLanguageRef.current, []))
+        if (!liveSessionRef.current) {
+          speak(localizedToolAck('clear_outfit', userLanguageRef.current, []))
+        }
       }
 
       if (functionCall.name === 'render_try_on') {
@@ -832,13 +834,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
                     suppressLiveAudioRef.current = false
                     appendLiveEvent('Customer responded to try-on feedback prompt; Live audio resumed.')
                   }
-                  setLiveProcessingLabel('Thinking')
-                  appendLiveEvent('Sending heard transcript to DB planner.')
-                  liveTextMutation.mutate({
-                    text: inputText,
-                    currentProductIds: selectedOutfitRef.current.map((product) => product.id),
-                    visibleProductIds: visibleItemsRef.current.map((product) => product.id),
-                  })
+                  appendLiveEvent('Live model will handle this turn directly.')
                 }
               }
             }
