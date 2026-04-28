@@ -1,83 +1,47 @@
 import { useMutation } from '@tanstack/react-query'
+import { PCMPlayer } from '@speechmatics/web-pcm-player'
 import * as React from 'react'
 import type { Product } from '#/db/schema'
 import {
   createVirtualTryOn,
-  generateAssistantSpeech,
   createLiveSessionToken,
   processTextCommand,
   processVoiceCommand,
 } from '#/server/products'
+import {
+  arrayBufferToBase64,
+  blobToDataUrl,
+  buildAudioConstraints,
+  fingerprintLiveAudioChunk,
+  getSupportedAudioMimeType,
+  playLivePcm,
+  readRms,
+  resampleFloat32ToPcm16,
+} from './studio/audio'
+import { buildRenderableOutfit, getSlot } from './studio/outfit'
+import {
+  AssistantPanel,
+  CameraPanel,
+  OptionsModal,
+  StudioTopBar,
+} from './studio/StudioPanels'
+import {
+  buildLiveRealtimeInputConfig,
+  buildLiveSystemInstruction,
+  buildLiveTools,
+} from './studio/live'
+import { speakAssistantReply } from './studio/speech'
+import type {
+  LiveEvent,
+  LiveInputMode,
+  OutfitGroup,
+  OutfitSlot,
+  TryOnResult,
+  VoiceDebugInfo,
+} from './studio/types'
 
 type StudioProps = {
   products: Product[]
-}
-
-type OutfitSlot =
-  | 'outerwear'
-  | 'top'
-  | 'bottom'
-  | 'dress'
-  | 'footwear'
-  | 'accessory'
-
-type OutfitGroup = {
-  slot: OutfitSlot
-  selected: Product
-  alternatives: Product[]
-  reason: string
-}
-
-type VoiceDebugInfo = {
-  transcript: string
-  reply: string
-  addProductIds: string[]
-  visibleProductIds: string[]
-  expandedProductId: string
-  clearOutfit: boolean
-  tryOnRequested: boolean
-  needsClarification: boolean
-  question: string
-  model: string
-}
-
-type LiveEvent = {
-  id: number
-  text: string
-}
-
-const slotLabels: Record<OutfitSlot, string> = {
-  outerwear: 'Outerwear',
-  top: 'Top',
-  bottom: 'Bottom',
-  dress: 'Dress',
-  footwear: 'Footwear',
-  accessory: 'Accessory',
-}
-
-function getSlot(product: Product): OutfitSlot {
-  if (product.category === 'tops') return 'top'
-  if (product.category === 'bottoms') return 'bottom'
-  if (product.category === 'dresses') return 'dress'
-  if (product.category === 'accessories') return 'accessory'
-  return product.category
-}
-
-function buildRenderableOutfit(
-  selectedProducts: Product[],
-  immediateProducts: Product[],
-) {
-  const productsBySlot = new Map<OutfitSlot, Product>()
-
-  for (const product of selectedProducts) {
-    productsBySlot.set(getSlot(product), product)
-  }
-
-  for (const product of immediateProducts) {
-    productsBySlot.set(getSlot(product), product)
-  }
-
-  return Array.from(productsBySlot.values())
 }
 
 export function VoiceTryOnStudio({ products }: StudioProps) {
@@ -87,6 +51,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   const recorderRef = React.useRef<MediaRecorder | null>(null)
   const micStreamRef = React.useRef<MediaStream | null>(null)
   const recordingTimeoutRef = React.useRef<number | null>(null)
+  const processingClearTimeoutRef = React.useRef<number | null>(null)
   const liveSessionRef = React.useRef<{
     close: () => void
     sendRealtimeInput: (params: never) => void
@@ -94,14 +59,21 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   } | null>(null)
   const liveInputContextRef = React.useRef<AudioContext | null>(null)
   const liveOutputContextRef = React.useRef<AudioContext | null>(null)
+  const livePcmPlayerRef = React.useRef<PCMPlayer | null>(null)
+  const liveOutputQueueEndTimeRef = React.useRef(0)
   const liveProcessorRef = React.useRef<ScriptProcessorNode | null>(null)
   const liveSourceRef = React.useRef<MediaStreamAudioSourceNode | null>(null)
   const liveSinkRef = React.useRef<GainNode | null>(null)
-  const liveNextStartTimeRef = React.useRef(0)
   const liveChunksSentRef = React.useRef(0)
   const liveLastMeterUpdateRef = React.useRef(0)
   const liveEventIdRef = React.useRef(0)
   const liveLastFinishedTranscriptRef = React.useRef('')
+  const liveLastFinishedTranscriptAtRef = React.useRef(0)
+  const assistantSpeakingUntilRef = React.useRef(0)
+  const liveInputModeRef = React.useRef<LiveInputMode>('idle')
+  const suppressLiveAudioRef = React.useRef(false)
+  const awaitingTryOnFeedbackRef = React.useRef(false)
+  const recentLiveAudioChunksRef = React.useRef(new Map<string, number>())
   const recentLiveToolCallsRef = React.useRef(new Map<string, number>())
   const audioChunksRef = React.useRef<BlobPart[]>([])
   const micTestRecorderRef = React.useRef<MediaRecorder | null>(null)
@@ -115,6 +87,10 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   >('idle')
   const [alwaysListening, setAlwaysListening] = React.useState(false)
   const [liveStatus, setLiveStatus] = React.useState('Live API disconnected.')
+  const [liveInputMode, setLiveInputModeState] =
+    React.useState<LiveInputMode>('idle')
+  const [liveProcessingLabel, setLiveProcessingLabel] = React.useState('')
+  const [liveToolLabel, setLiveToolLabel] = React.useState('')
   const [liveEvents, setLiveEvents] = React.useState<LiveEvent[]>([])
   const [liveMicLevel, setLiveMicLevel] = React.useState(0)
   const [liveChunksSent, setLiveChunksSent] = React.useState(0)
@@ -132,20 +108,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   const [expandedProduct, setExpandedProduct] = React.useState<Product | null>(
     null,
   )
-  const [tryOnResult, setTryOnResult] = React.useState<{
-    imageUrl: string
-    message: string
-    generationPrompt: string
-    imageModel: string
-    status: 'generated' | 'failed' | 'mock'
-    references: Array<{
-      id: string
-      name: string
-      category: Product['category']
-      imageUrl: string
-      imageDescription: string
-    }>
-  } | null>(null)
+  const [tryOnResult, setTryOnResult] = React.useState<TryOnResult | null>(null)
   const [debugOpen, setDebugOpen] = React.useState(false)
   const [optionsOpen, setOptionsOpen] = React.useState(false)
   const [bigScreenMode, setBigScreenMode] = React.useState(false)
@@ -207,6 +170,12 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
     setLiveEvents((events) =>
       [{ id: liveEventIdRef.current, text: `${timestamp} ${event}` }, ...events].slice(0, 12),
     )
+  }, [])
+
+  const setLiveInputMode = React.useCallback((mode: LiveInputMode) => {
+    if (liveInputModeRef.current === mode) return
+    liveInputModeRef.current = mode
+    setLiveInputModeState(mode)
   }, [])
 
   React.useEffect(() => {
@@ -281,9 +250,17 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       photoDataUrl: string
     }) => createVirtualTryOn({ data: input }),
     onSuccess: (result) => {
+      const feedbackQuestion =
+        result.status === 'generated'
+          ? 'How do you feel about this look? Would you keep it, or should I try a different direction?'
+          : result.message
       setTryOnResult(result)
       setRenderDebugStatus(result.message)
-      setAssistantReply(result.message)
+      setAssistantReply(feedbackQuestion)
+      awaitingTryOnFeedbackRef.current = result.status === 'generated'
+      suppressLiveAudioRef.current = false
+      setLiveProcessingLabel('')
+      speak(feedbackQuestion)
       appendLiveEvent(
         `Try-on returned ${result.status}; references: ${result.references
           .map((reference) => reference.name)
@@ -292,14 +269,23 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
     },
     onError: () => {
       const message = 'Try-on failed. Check server logs and AI configuration.'
+      suppressLiveAudioRef.current = false
+      awaitingTryOnFeedbackRef.current = false
+      setLiveProcessingLabel('')
       setRenderDebugStatus(message)
       setAssistantReply(message)
+    },
+    onSettled: () => {
+      suppressLiveAudioRef.current = false
     },
   })
 
   const voiceMutation = useMutation({
     mutationFn: (input: { audioDataUrl: string; currentProductIds: string[] }) =>
       processVoiceCommand({ data: input }),
+    onMutate: () => {
+      setLiveProcessingLabel('Understanding voice')
+    },
     onSuccess: (result) => {
       const plannerResult = {
         transcript: result.transcript,
@@ -328,7 +314,11 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       setAssistantReply(message)
       speak(message)
     },
-    onSettled: () => setRecordingState('idle'),
+    onSettled: () => {
+      setRecordingState('idle')
+      setLiveInputMode(alwaysListening ? 'listening' : 'idle')
+      setLiveProcessingLabel('')
+    },
   })
 
   const liveTextMutation = useMutation({
@@ -338,6 +328,9 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       visibleProductIds: string[]
     }) =>
       processTextCommand({ data: input }),
+    onMutate: () => {
+      setLiveProcessingLabel('Checking inventory')
+    },
     onSuccess: (result) => {
       appendLiveEvent(`DB planner returned ${result.visibleProductIds.length} visible and ${result.addProductIds.length} add item(s).`)
       applyPlannerResult({
@@ -357,15 +350,41 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       const reason = error instanceof Error ? error.message : 'unknown error'
       appendLiveEvent(`DB planner failed: ${reason}`)
     },
+    onSettled: () => {
+      setLiveProcessingLabel('')
+    },
   })
 
-  const speak = React.useCallback((message: string) => {
-    void speakAssistantReply(message, audioRef.current, setSpeechStatus)
+  const blockMicWhileAssistantSpeaks = React.useCallback(
+    (durationMs = 5000) => {
+      assistantSpeakingUntilRef.current = Math.max(
+        assistantSpeakingUntilRef.current,
+        Date.now() + durationMs,
+      )
+    },
+    [],
+  )
+
+  const releaseAssistantMicBlock = React.useCallback(() => {
+    assistantSpeakingUntilRef.current = Math.min(
+      assistantSpeakingUntilRef.current,
+      Date.now() + 250,
+    )
   }, [])
 
+  const speak = React.useCallback((message: string) => {
+    void speakAssistantReply(message, audioRef.current, setSpeechStatus, {
+      onStart: (durationMs) => blockMicWhileAssistantSpeaks(durationMs ?? 8000),
+      onEnd: releaseAssistantMicBlock,
+    })
+  }, [blockMicWhileAssistantSpeaks, releaseAssistantMicBlock])
+
   const replayAssistant = React.useCallback(() => {
-    void speakAssistantReply(assistantReply, audioRef.current, setSpeechStatus)
-  }, [assistantReply])
+    void speakAssistantReply(assistantReply, audioRef.current, setSpeechStatus, {
+      onStart: (durationMs) => blockMicWhileAssistantSpeaks(durationMs ?? 8000),
+      onEnd: releaseAssistantMicBlock,
+    })
+  }, [assistantReply, blockMicWhileAssistantSpeaks, releaseAssistantMicBlock])
 
   const capturePhoto = React.useCallback(() => {
     const video = videoRef.current
@@ -523,6 +542,9 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       const outfitNames = finalOutfit.map((product) => product.name).join(', ')
       const message = `Taking a photo and preparing a virtual try-on with ${outfitNames}.`
       setExpandedProduct(null)
+      suppressLiveAudioRef.current = true
+      awaitingTryOnFeedbackRef.current = false
+      setLiveProcessingLabel('Rendering outfit')
       setRenderDebugStatus(
         `Render request sent with ${finalOutfit.length} item(s): ${outfitNames}.`,
       )
@@ -627,10 +649,18 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
 
     try {
       setLiveStatus('Requesting ephemeral Live token...')
-      const [{ GoogleGenAI, Modality }, tokenResult] = await Promise.all([
-        import('@google/genai'),
-        createLiveSessionToken(),
-      ])
+      const [
+        {
+          ActivityHandling,
+          EndSensitivity,
+          GoogleGenAI,
+          Modality,
+          StartSensitivity,
+          TurnCoverage,
+          Type,
+        },
+        tokenResult,
+      ] = await Promise.all([import('@google/genai'), createLiveSessionToken()])
       appendLiveEvent(
         `Received ephemeral token for ${tokenResult.model} with tools: ${tokenResult.toolNames.join(', ')}.`,
       )
@@ -646,8 +676,12 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       const outputContext = new AudioContext({ sampleRate: 24_000 })
       await outputContext.resume()
       liveOutputContextRef.current = outputContext
-      liveNextStartTimeRef.current = outputContext.currentTime
+      const pcmPlayer = new PCMPlayer(outputContext)
+      pcmPlayer.volumePercentage = 72
+      livePcmPlayerRef.current = pcmPlayer
+      liveOutputQueueEndTimeRef.current = outputContext.currentTime
       recentLiveToolCallsRef.current.clear()
+      recentLiveAudioChunksRef.current.clear()
 
       const session = await ai.live.connect({
         model: tokenResult.model,
@@ -655,6 +689,16 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
           responseModalities: [Modality.AUDIO],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
+          realtimeInputConfig: buildLiveRealtimeInputConfig({
+            ActivityHandling,
+            EndSensitivity,
+            StartSensitivity,
+            TurnCoverage,
+          }),
+          systemInstruction: {
+            parts: [{ text: buildLiveSystemInstruction(products) }],
+          },
+          tools: [buildLiveTools(Type)],
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: tokenResult.voice },
@@ -671,41 +715,114 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
             if (message.voiceActivity) appendLiveEvent('Voice activity event.')
             if (message.serverContent?.interrupted) {
               appendLiveEvent('Model response interrupted.')
-              liveNextStartTimeRef.current = liveOutputContextRef.current?.currentTime ?? 0
+              liveOutputQueueEndTimeRef.current =
+                liveOutputContextRef.current?.currentTime ?? 0
+              recentLiveAudioChunksRef.current.clear()
             }
 
             const inputText = message.serverContent?.inputTranscription?.text
             if (inputText) {
               appendLiveEvent(`Heard: ${inputText}`)
+              const now = Date.now()
+              const isImmediateDuplicateTranscript =
+                inputText === liveLastFinishedTranscriptRef.current &&
+                now - liveLastFinishedTranscriptAtRef.current < 1800
               if (
                 message.serverContent?.inputTranscription?.finished &&
-                inputText !== liveLastFinishedTranscriptRef.current
+                !isImmediateDuplicateTranscript
               ) {
-                liveLastFinishedTranscriptRef.current = inputText
-                appendLiveEvent('Sending heard transcript to DB planner.')
-                liveTextMutation.mutate({
-                  text: inputText,
-                  currentProductIds: selectedOutfitRef.current.map((product) => product.id),
-                  visibleProductIds: visibleItemsRef.current.map((product) => product.id),
-                })
+                if (Date.now() < assistantSpeakingUntilRef.current) {
+                  appendLiveEvent('Ignored transcript while assistant audio was playing.')
+                } else {
+                  liveLastFinishedTranscriptRef.current = inputText
+                  liveLastFinishedTranscriptAtRef.current = now
+                  if (awaitingTryOnFeedbackRef.current) {
+                    awaitingTryOnFeedbackRef.current = false
+                    suppressLiveAudioRef.current = false
+                    appendLiveEvent('Customer responded to try-on feedback prompt; Live audio resumed.')
+                  }
+                  setLiveProcessingLabel('Thinking')
+                  appendLiveEvent('Sending heard transcript to DB planner.')
+                  liveTextMutation.mutate({
+                    text: inputText,
+                    currentProductIds: selectedOutfitRef.current.map((product) => product.id),
+                    visibleProductIds: visibleItemsRef.current.map((product) => product.id),
+                  })
+                }
               }
             }
 
             const outputText = message.serverContent?.outputTranscription?.text
             if (outputText) {
-              appendLiveEvent(`Live model said, ignored for inventory: ${outputText}`)
+              setLiveProcessingLabel('Speaking')
+              appendLiveEvent(
+                suppressLiveAudioRef.current
+                  ? `Live model said while muted: ${outputText}`
+                  : `Live model said, ignored for inventory: ${outputText}`,
+              )
             }
 
             for (const part of message.serverContent?.modelTurn?.parts ?? []) {
               if (part.inlineData?.data) {
-                appendLiveEvent(`Received audio: ${part.inlineData.mimeType ?? 'pcm'}.`)
-                playLivePcm(part.inlineData.data, liveOutputContextRef, liveNextStartTimeRef)
+                if (suppressLiveAudioRef.current) {
+                  appendLiveEvent('Muted Live audio while waiting for rendered-preview feedback.')
+                } else {
+                  setLiveProcessingLabel('Speaking')
+                  const audioKey = fingerprintLiveAudioChunk(part.inlineData.data)
+                  const now = Date.now()
+                  const lastPlayedAt = recentLiveAudioChunksRef.current.get(audioKey) ?? 0
+
+                  if (now - lastPlayedAt < 15_000) {
+                    appendLiveEvent('Skipped repeated Live audio chunk.')
+                    continue
+                  }
+
+                  recentLiveAudioChunksRef.current.set(audioKey, now)
+                  for (const [key, timestamp] of recentLiveAudioChunksRef.current) {
+                    if (now - timestamp > 30_000) {
+                      recentLiveAudioChunksRef.current.delete(key)
+                    }
+                  }
+
+                  appendLiveEvent(`Received audio: ${part.inlineData.mimeType ?? 'pcm'}.`)
+                  const playbackDurationSeconds = playLivePcm(
+                    part.inlineData.data,
+                    part.inlineData.mimeType ?? 'audio/pcm;rate=24000',
+                    livePcmPlayerRef,
+                    liveOutputContextRef,
+                    liveOutputQueueEndTimeRef,
+                  )
+                  blockMicWhileAssistantSpeaks(
+                    Math.max(650, playbackDurationSeconds * 1000 + 450),
+                  )
+                }
               }
             }
 
             for (const functionCall of message.toolCall?.functionCalls ?? []) {
+              const toolLabel = formatLiveToolLabel(functionCall.name)
+              setLiveToolLabel(toolLabel)
+              setLiveProcessingLabel(
+                functionCall.name === 'render_try_on'
+                  ? 'Rendering outfit'
+                  : `Using tool: ${toolLabel}`,
+              )
               appendLiveEvent(`Tool call: ${functionCall.name}.`)
               handleLiveToolCall(functionCall)
+              if (functionCall.name !== 'render_try_on') {
+                if (processingClearTimeoutRef.current) {
+                  window.clearTimeout(processingClearTimeoutRef.current)
+                }
+                processingClearTimeoutRef.current = window.setTimeout(() => {
+                  setLiveProcessingLabel('')
+                  setLiveToolLabel('')
+                  processingClearTimeoutRef.current = null
+                }, 900)
+              }
+            }
+
+            if (message.serverContent?.turnComplete && !tryOnMutation.isPending) {
+              setLiveProcessingLabel('')
             }
           },
           onerror: (event) => {
@@ -731,9 +848,21 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       processor.onaudioprocess = (event) => {
         const input = event.inputBuffer.getChannelData(0)
         const now = performance.now()
+        const assistantIsSpeaking = Date.now() < assistantSpeakingUntilRef.current
         if (now - liveLastMeterUpdateRef.current > 120) {
           liveLastMeterUpdateRef.current = now
-          setLiveMicLevel(readRms(input))
+          const rms = assistantIsSpeaking ? 0 : readRms(input)
+          setLiveMicLevel(rms)
+          if (assistantIsSpeaking) {
+            setLiveInputMode('muted')
+          } else if (rms > 0.018) {
+            setLiveInputMode('hearing')
+          } else {
+            setLiveInputMode('listening')
+          }
+        }
+        if (assistantIsSpeaking) {
+          return
         }
         const pcm16 = resampleFloat32ToPcm16(
           input,
@@ -760,6 +889,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       sink.connect(inputContext.destination)
       appendLiveEvent('Microphone streaming started.')
       setAlwaysListening(true)
+      setLiveInputMode('listening')
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'unknown error'
       setLiveStatus(`Live API failed: ${reason}`)
@@ -772,6 +902,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
     products,
     refreshAudioInputs,
     selectedAudioInputId,
+    tryOnMutation.isPending,
   ])
 
   const stopLiveSession = React.useCallback(() => {
@@ -781,9 +912,17 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
     liveProcessorRef.current = null
     liveSourceRef.current = null
     liveSinkRef.current = null
+    livePcmPlayerRef.current = null
+    liveOutputQueueEndTimeRef.current = 0
     liveInputContextRef.current?.close()
-      liveOutputContextRef.current?.close()
-      recentLiveToolCallsRef.current.clear()
+    liveOutputContextRef.current?.close()
+    suppressLiveAudioRef.current = false
+    awaitingTryOnFeedbackRef.current = false
+    liveLastFinishedTranscriptRef.current = ''
+    liveLastFinishedTranscriptAtRef.current = 0
+    assistantSpeakingUntilRef.current = 0
+    recentLiveToolCallsRef.current.clear()
+    recentLiveAudioChunksRef.current.clear()
     liveInputContextRef.current = null
     liveOutputContextRef.current = null
     micStreamRef.current?.getTracks().forEach((track) => track.stop())
@@ -794,6 +933,13 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
     setAlwaysListening(false)
     setLiveMicLevel(0)
     setLiveChunksSent(0)
+    setLiveProcessingLabel('')
+    setLiveToolLabel('')
+    setLiveInputMode('idle')
+    if (processingClearTimeoutRef.current) {
+      window.clearTimeout(processingClearTimeoutRef.current)
+      processingClearTimeoutRef.current = null
+    }
     liveChunksSentRef.current = 0
     setLiveStatus('Live API disconnected.')
     appendLiveEvent('Live session stopped.')
@@ -889,6 +1035,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       recorderRef.current = recorder
       recorder.start()
       setRecordingState('recording')
+      setLiveInputMode('recording')
       setAssistantReply(
         alwaysListening
           ? 'Listening for your next instruction.'
@@ -917,576 +1064,139 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       recordingTimeoutRef.current = null
     }
     recorderRef.current?.stop()
-  }, [recordingState])
+    setLiveInputMode(alwaysListening ? 'listening' : 'idle')
+  }, [alwaysListening, recordingState, setLiveInputMode])
 
   React.useEffect(() => {
     return () => {
       if (recordingTimeoutRef.current) window.clearTimeout(recordingTimeoutRef.current)
+      if (processingClearTimeoutRef.current) {
+        window.clearTimeout(processingClearTimeoutRef.current)
+      }
       stopLiveSession()
     }
   }, [stopLiveSession])
 
+  const aiProcessingLabel =
+    tryOnMutation.isPending
+      ? 'Rendering outfit'
+      : voiceMutation.isPending || recordingState === 'processing'
+        ? 'Understanding voice'
+        : liveTextMutation.isPending
+          ? 'Checking inventory'
+          : liveProcessingLabel
+  const liveInputLabel = formatLiveInputLabel(liveInputMode)
+  const aiIsProcessing = Boolean(aiProcessingLabel)
+
   return (
     <section className={`studio-shell ${bigScreenMode ? 'big-screen' : ''}`}>
-      <div className="camera-panel">
-        <video ref={videoRef} autoPlay muted playsInline suppressHydrationWarning />
-        <div className="futuristic-grid" aria-hidden="true" />
-        <div className="live-topbar">
-          <button
-            className={`play-live-button ${alwaysListening ? 'active' : ''}`}
-            type="button"
-            onClick={() => {
+      <CameraPanel
+        videoRef={videoRef}
+        canvasRef={canvasRef}
+        cameraReady={cameraReady}
+        selectedOutfitCount={selectedOutfit.length}
+        floatingChoices={floatingChoices}
+        selectedAndVisibleAreEmpty={!selectedOutfit.length && !visibleItems.length}
+        expandedProduct={expandedProduct}
+        tryOnResult={tryOnResult}
+        onViewProduct={(product) => {
+          setTryOnResult(null)
+          setExpandedProduct(product)
+        }}
+        onAddProduct={(product, reason) => addMatchesToOutfit([product], reason)}
+        onCloseExpanded={() => setExpandedProduct(null)}
+        onReturnToCamera={() => {
+          suppressLiveAudioRef.current = false
+          awaitingTryOnFeedbackRef.current = false
+          setLiveProcessingLabel('')
+          setTryOnResult(null)
+        }}
+        topBar={
+          <StudioTopBar
+            alwaysListening={alwaysListening}
+            liveStatus={liveStatus}
+            aiIsProcessing={aiIsProcessing}
+            aiProcessingLabel={aiProcessingLabel}
+            liveInputMode={liveInputMode}
+            liveInputLabel={liveInputLabel}
+            recordingState={recordingState}
+            bigScreenMode={bigScreenMode}
+            onToggleLive={() => {
               if (alwaysListening) {
                 stopLiveSession()
               } else {
                 void startLiveSession()
               }
             }}
-            aria-label={alwaysListening ? 'Stop Gemini Live' : 'Start Gemini Live'}
-          >
-            {alwaysListening ? 'Stop' : 'Play'}
-          </button>
-          <div>
-            <strong>{alwaysListening ? 'Gemini Live active' : 'Gemini Live ready'}</strong>
-            <span>{liveStatus}</span>
-          </div>
-          <button
-            className="top-options-button"
-            type="button"
-            onClick={() => setBigScreenMode((enabled) => !enabled)}
-          >
-            {bigScreenMode ? 'Normal' : 'Big screen'}
-          </button>
-          <button className="top-options-button" type="button" onClick={() => setOptionsOpen(true)}>
-            Options
-          </button>
-        </div>
-        <div className="camera-overlay">
-          <span>{cameraReady ? 'Live fitting room camera' : 'Waiting for camera'}</span>
-          <strong>
-            {selectedOutfit.length
-              ? `${selectedOutfit.length} outfit item${selectedOutfit.length === 1 ? '' : 's'} selected`
-              : 'No outfit selected'}
-          </strong>
-        </div>
-        {floatingChoices.length || (!selectedOutfit.length && !visibleItems.length) ? (
-          <div
-            className={`floating-products ${floatingChoices.length ? 'has-items' : ''}`}
-            aria-label="AI product choices"
-          >
-            {floatingChoices.length ? (
-              floatingChoices.map((product) => (
-                <article
-                  className="floating-product-card"
-                  key={product.id}
-                >
-                  <img src={product.imageUrl} alt={product.imageAlt} />
-                  <span>{product.category}</span>
-                  <strong>{product.name}</strong>
-                  <div className="floating-product-actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTryOnResult(null)
-                        setExpandedProduct(product)
-                      }}
-                    >
-                      View
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => addMatchesToOutfit([product], 'Manually selected')}
-                    >
-                      Add
-                    </button>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <div className="floating-empty">
-                Products the AI asks you to choose from will appear here.
-              </div>
-            )}
-          </div>
-        ) : null}
-        {expandedProduct ? (
-          <div className="expanded-product" aria-live="polite">
-            <div className="expanded-product-copy">
-              <span>{expandedProduct.category}</span>
-              <strong>{expandedProduct.name}</strong>
-              <p>{expandedProduct.imageDescription}</p>
-            </div>
-            <img src={expandedProduct.imageUrl} alt={expandedProduct.imageAlt} />
-            <div className="expanded-product-actions">
-              <button
-                type="button"
-                onClick={() => addMatchesToOutfit([expandedProduct], 'Expanded product selected')}
-              >
-                Add to outfit
-              </button>
-              <button type="button" onClick={() => setExpandedProduct(null)}>
-                Close
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {tryOnResult ? (
-          <div className="camera-try-on-preview" aria-live="polite">
-            <img src={tryOnResult.imageUrl} alt="Virtual try-on preview" />
-            <button
-              className="camera-return-button"
-              type="button"
-              onClick={() => setTryOnResult(null)}
-              aria-label="Return to camera"
-            >
-              Camera
-            </button>
-          </div>
-        ) : null}
-        <canvas ref={canvasRef} hidden />
-      </div>
+            onToggleBigScreen={() => setBigScreenMode((enabled) => !enabled)}
+            onOpenOptions={() => setOptionsOpen(true)}
+          />
+        }
+      />
 
-      <aside className="assistant-panel">
-        <div>
-          <p className="eyebrow">Selected clothes</p>
-          <h2>Render outfit</h2>
-        </div>
-
-        <div className="live-meter" aria-label="Microphone level">
-          <span style={{ width: `${Math.min(100, liveMicLevel * 260)}%` }} />
-        </div>
-
-        <div className="assistant-card">
-          <span>Selected render outfit</span>
-          <p className="render-debug">{renderDebugStatus}</p>
-          {outfitGroups.length ? (
-            <div className="outfit-board compact">
-              {outfitGroups.map((group) => (
-                <article className="outfit-group" key={group.slot}>
-                  <div className="outfit-group-header">
-                    <strong>{slotLabels[group.slot]}</strong>
-                    <button type="button" onClick={() => removeOutfitGroup(group.slot)}>
-                      Remove
-                    </button>
-                  </div>
-                  <button
-                    className="selected-outfit-item"
-                    type="button"
-                    onClick={() => {
-                      setExpandedProduct(null)
-                      setTryOnResult(null)
-                      setVisibleItems([group.selected, ...group.alternatives])
-                    }}
-                  >
-                    <img src={group.selected.imageUrl} alt={group.selected.imageAlt} />
-                    <span>{group.selected.name}</span>
-                  </button>
-                  {group.alternatives.length ? (
-                    <div className="alternative-list">
-                      <span>Alternatives</span>
-                      {group.alternatives.map((product) => (
-                        <button
-                          key={product.id}
-                          type="button"
-                          onClick={() => selectAlternative(group.slot, product)}
-                        >
-                          {product.name}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p>No items selected. Ask the assistant to add clothes.</p>
-          )}
-        </div>
-
-        {tryOnMutation.isPending ? (
-          <div className="try-on-result is-loading">
-            <div className="render-loader" aria-hidden="true" />
-            <strong>Generating virtual try-on</strong>
-            <p>
-              Gemini is editing your camera photo with the selected garment
-              references. This can take a few seconds.
-            </p>
-          </div>
-        ) : null}
-
-        <audio ref={audioRef} preload="auto" suppressHydrationWarning />
-      </aside>
+      <AssistantPanel
+        audioRef={audioRef}
+        liveMicLevel={liveMicLevel}
+        liveInputMode={liveInputMode}
+        liveInputLabel={liveInputLabel}
+        liveToolLabel={liveToolLabel}
+        aiIsProcessing={aiIsProcessing}
+        aiProcessingLabel={aiProcessingLabel}
+        renderDebugStatus={renderDebugStatus}
+        outfitGroups={outfitGroups}
+        tryOnPending={tryOnMutation.isPending}
+        onRemoveOutfitGroup={removeOutfitGroup}
+        onShowAlternatives={(productsToShow) => {
+          setExpandedProduct(null)
+          setTryOnResult(null)
+          setVisibleItems(productsToShow)
+        }}
+        onSelectAlternative={selectAlternative}
+      />
 
       {optionsOpen ? (
-        <div className="options-backdrop" role="presentation">
-          <div className="options-modal" role="dialog" aria-modal="true" aria-label="Kiosk options">
-            <div className="options-header">
-              <div>
-                <p className="eyebrow">Diagnostics</p>
-                <h3>Voice and Live controls</h3>
-              </div>
-              <button type="button" onClick={() => setOptionsOpen(false)}>
-                Close
-              </button>
-            </div>
-
-            <button
-              className={`voice-button ${recordingState}`}
-              disabled={recordingState === 'processing' || alwaysListening}
-              onMouseDown={startRecording}
-              onMouseUp={stopRecording}
-              onMouseLeave={stopRecording}
-              onTouchEnd={stopRecording}
-              onTouchStart={startRecording}
-              type="button"
-            >
-              <span className="recording-dot" />
-              {recordingState === 'recording'
-                ? 'Recording... release to send'
-                : recordingState === 'processing'
-                  ? 'Processing with Gemini...'
-                  : 'Fallback: hold to talk'}
-            </button>
-
-        <label className="mic-picker">
-          <span>Microphone</span>
-          <select
-            value={selectedAudioInputId}
-            onChange={(event) => setSelectedAudioInputId(event.target.value)}
-            disabled={alwaysListening || recordingState !== 'idle'}
-          >
-            {audioInputs.length ? (
-              <>
-                <option value="default">System default microphone</option>
-                {audioInputs.map((input, index) => (
-                <option
-                  key={`${input.deviceId || 'empty'}-${input.groupId || 'group'}-${index}`}
-                  value={input.deviceId}
-                >
-                  {formatAudioInputLabel(input, index)}
-                </option>
-                ))}
-              </>
-            ) : (
-              <option value="default">System default microphone</option>
-            )}
-          </select>
-        </label>
-        <button className="listen-toggle" type="button" onClick={refreshAudioInputs}>
-          Refresh microphones
-        </button>
-        <button className="listen-toggle" type="button" onClick={startMicTest}>
-          Test selected mic
-        </button>
-        <small className="live-status">{micTestStatus}</small>
-        {micTrackSettings ? (
-          <details className="debug-panel">
-            <summary>Selected mic track settings</summary>
-            <pre className="track-settings">{micTrackSettings}</pre>
-          </details>
-        ) : null}
-        <small className="live-status">Mic level {liveMicLevel.toFixed(3)} · chunks sent {liveChunksSent}</small>
-        <button className="listen-toggle" type="button" onClick={sendLiveTextTest}>
-          Send Live text test
-        </button>
-        <details className="debug-panel">
-          <summary>Live API events</summary>
-          {liveEvents.length ? (
-            <ul className="live-events">
-              {liveEvents.map((event) => (
-                <li key={event.id}>{event.text}</li>
-              ))}
-            </ul>
-          ) : (
-            <p>No Live events yet.</p>
-          )}
-        </details>
-
-        <div className="assistant-card">
-          <span>Assistant</span>
-          <p>{assistantReply}</p>
-          <div className="speech-controls">
-            <button type="button" onClick={replayAssistant}>
-              Replay voice
-            </button>
-            <small>{speechStatus}</small>
-          </div>
-        </div>
-
-        <details
-          className="debug-panel"
-          open={debugOpen}
-          onToggle={(event) => setDebugOpen(event.currentTarget.open)}
-        >
-          <summary>Debug voice understanding</summary>
-          {voiceDebugInfo ? (
-            <dl>
-              <dt>Model</dt>
-              <dd>{voiceDebugInfo.model}</dd>
-              <dt>Transcript</dt>
-              <dd>{voiceDebugInfo.transcript || 'No transcript returned.'}</dd>
-              <dt>Reply</dt>
-              <dd>{voiceDebugInfo.reply}</dd>
-              <dt>Add product IDs</dt>
-    <dd>{voiceDebugInfo.addProductIds.join(', ') || 'none'}</dd>
-    <dt>Visible product IDs</dt>
-    <dd>{voiceDebugInfo.visibleProductIds.join(', ') || 'none'}</dd>
-    <dt>Expanded ID</dt>
-    <dd>{voiceDebugInfo.expandedProductId || 'none'}</dd>
-    <dt>Flags</dt>
-              <dd>
-                clear={String(voiceDebugInfo.clearOutfit)}, tryOn=
-                {String(voiceDebugInfo.tryOnRequested)}, clarification=
-                {String(voiceDebugInfo.needsClarification)}
-              </dd>
-              <dt>Question</dt>
-              <dd>{voiceDebugInfo.question || 'none'}</dd>
-            </dl>
-          ) : (
-            <p>No voice request processed yet.</p>
-          )}
-        </details>
-          </div>
-        </div>
+        <OptionsModal
+          recordingState={recordingState}
+          alwaysListening={alwaysListening}
+          selectedAudioInputId={selectedAudioInputId}
+          audioInputs={audioInputs}
+          micTestStatus={micTestStatus}
+          micTrackSettings={micTrackSettings}
+          liveMicLevel={liveMicLevel}
+          liveChunksSent={liveChunksSent}
+          liveEvents={liveEvents}
+          assistantReply={assistantReply}
+          speechStatus={speechStatus}
+          debugOpen={debugOpen}
+          voiceDebugInfo={voiceDebugInfo}
+          onClose={() => setOptionsOpen(false)}
+          onStartRecording={startRecording}
+          onStopRecording={stopRecording}
+          onSelectAudioInput={setSelectedAudioInputId}
+          onRefreshAudioInputs={refreshAudioInputs}
+          onStartMicTest={startMicTest}
+          onSendLiveTextTest={sendLiveTextTest}
+          onReplayAssistant={replayAssistant}
+          onToggleDebug={setDebugOpen}
+        />
       ) : null}
     </section>
   )
 }
 
-function getSupportedAudioMimeType() {
-  const preferredTypes = [
-    'audio/ogg;codecs=vorbis',
-    'audio/ogg',
-    'audio/aac',
-    'audio/mp4',
-    'audio/webm',
-  ]
-
-  return preferredTypes.find((type) => MediaRecorder.isTypeSupported(type))
+function formatLiveInputLabel(mode: LiveInputMode) {
+  if (mode === 'hearing') return 'Hearing you'
+  if (mode === 'muted') return 'Mic paused while AI speaks'
+  if (mode === 'recording') return 'Recording'
+  if (mode === 'listening') return 'Listening'
+  return 'Mic idle'
 }
 
-function buildAudioConstraints(deviceId: string): MediaTrackConstraints {
-  return {
-    channelCount: 1,
-    echoCancellation: true,
-    noiseSuppression: true,
-    autoGainControl: true,
-    ...(deviceId && deviceId !== 'default'
-      ? { deviceId: { exact: deviceId } }
-      : {}),
-  }
-}
-
-function formatAudioInputLabel(input: MediaDeviceInfo, index: number) {
-  if (input.deviceId === 'default') return 'System default microphone'
-  if (input.label) return input.label
-  return `Microphone ${index + 1}`
-}
-
-function buildLiveSystemInstruction(products: Product[]) {
-  const catalog = products
-    .map(
-      (product) =>
-        `${product.id}: ${product.name}, category=${product.category}, tags=${product.styleTags.join(', ')}, colors=${product.colors.join(', ')}, ${product.shortDescription}`,
-    )
-    .join('\n')
-
-  return `
-You are Atelier AI, a real-time voice stylist inside a physical clothing store.
-Speak naturally and briefly, but do not invent or name products from memory.
-When the customer asks for clothes, options, recommendations, or to choose an option, say a short acknowledgement like "I am checking the store inventory" or ask one style question.
-The kiosk backend will decide exact products from the database and show them on screen.
-Use tools to update the kiosk screen whenever possible, but if tools are unavailable, do not list product names yourself.
-Never add multiple final products from the same clothing group unless they are alternatives.
-If the customer asks to render, try on, or take a photo, call render_try_on.
-If the customer asks to see an item better, larger, closer, zoomed, opened, or with details, call expand_item with one product id.
-
-Catalog:
-${catalog}
-`.trim()
-}
-
-function buildLiveTools(Type: typeof import('@google/genai').Type) {
-  const productIdsSchema = {
-    type: Type.OBJECT,
-    properties: {
-      productIds: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING },
-      },
-    },
-    required: ['productIds'],
-  }
-
-  return {
-    functionDeclarations: [
-      {
-        name: 'show_items',
-        description:
-          'Show products on the kiosk screen as search results or alternatives.',
-        parameters: productIdsSchema,
-      },
-      {
-        name: 'add_items',
-        description:
-          'Add selected products to the outfit board. Same-category products become alternatives.',
-        parameters: productIdsSchema,
-      },
-      {
-        name: 'expand_item',
-        description:
-          'Expand one product on the camera view. Use when the user asks to see it better, bigger, closer, zoomed, opened, or with details.',
-        parameters: productIdsSchema,
-      },
-      {
-        name: 'clear_outfit',
-        description: 'Clear the current outfit board.',
-        parameters: {
-          type: Type.OBJECT,
-          properties: {},
-        },
-      },
-      {
-        name: 'render_try_on',
-        description:
-          'Take the current camera frame and generate the try-on using the selected outfit.',
-        parameters: {
-          type: Type.OBJECT,
-          properties: {},
-        },
-      },
-    ],
-  }
-}
-
-function resampleFloat32ToPcm16(
-  input: Float32Array,
-  inputSampleRate: number,
-  outputSampleRate: number,
-) {
-  const ratio = inputSampleRate / outputSampleRate
-  const outputLength = Math.floor(input.length / ratio)
-  const output = new Int16Array(outputLength)
-
-  for (let i = 0; i < outputLength; i += 1) {
-    const sourceIndex = Math.floor(i * ratio)
-    const sample = Math.max(-1, Math.min(1, input[sourceIndex] ?? 0))
-    output[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff
-  }
-
-  return output
-}
-
-function readRms(input: Float32Array) {
-  let sum = 0
-
-  for (const sample of input) {
-    sum += sample * sample
-  }
-
-  return Math.sqrt(sum / input.length)
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer) {
-  const bytes = new Uint8Array(buffer)
-  let binary = ''
-  const chunkSize = 0x8000
-
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
-  }
-
-  return btoa(binary)
-}
-
-function base64ToInt16Array(base64: string) {
-  const binary = atob(base64)
-  const bytes = new Uint8Array(binary.length)
-
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-
-  return new Int16Array(bytes.buffer)
-}
-
-function playLivePcm(
-  base64Pcm: string,
-  contextRef: React.RefObject<AudioContext | null>,
-  nextStartTimeRef: React.MutableRefObject<number>,
-) {
-  const context = contextRef.current
-  if (!context) return
-
-  const pcm = base64ToInt16Array(base64Pcm)
-  const audioBuffer = context.createBuffer(1, pcm.length, 24_000)
-  const channel = audioBuffer.getChannelData(0)
-
-  for (let i = 0; i < pcm.length; i += 1) {
-    channel[i] = pcm[i] / 0x8000
-  }
-
-  const source = context.createBufferSource()
-  source.buffer = audioBuffer
-  source.connect(context.destination)
-  const startTime = Math.max(context.currentTime, nextStartTimeRef.current)
-  source.start(startTime)
-  nextStartTimeRef.current = startTime + audioBuffer.duration
-}
-
-function blobToDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
-}
-
-async function speakAssistantReply(
-  message: string,
-  audioElement: HTMLAudioElement | null,
-  setSpeechStatus: (status: string) => void,
-) {
-  try {
-    setSpeechStatus('Generating model voice...')
-    const speech = await generateAssistantSpeech({ data: { text: message } })
-
-    if (speech.status === 'ok' && speech.audioDataUrl) {
-      if (!audioElement) throw new Error('Audio element is not ready')
-      audioElement.pause()
-      audioElement.src = speech.audioDataUrl
-      audioElement.currentTime = 0
-      audioElement.load()
-      await audioElement.play()
-      setSpeechStatus(
-        `Playing Gemini TTS voice ${speech.voice} as ${speech.mimeType}.`,
-      )
-      return
-    }
-    setSpeechStatus(
-      `Model voice unavailable: ${speech.reason || 'unknown reason'}. Falling back to browser voice.`,
-    )
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : 'unknown error'
-    setSpeechStatus(
-      `Audio playback failed: ${reason}. Trying browser voice.`,
-    )
-  }
-
-  if (!('speechSynthesis' in window)) {
-    setSpeechStatus('Browser speech synthesis is unavailable.')
-    return
-  }
-
-  try {
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(message)
-    utterance.onstart = () => setSpeechStatus('Playing browser voice.')
-    utterance.onend = () => setSpeechStatus('Browser voice finished.')
-    utterance.onerror = () => setSpeechStatus('Browser voice failed.')
-    window.speechSynthesis.speak(utterance)
-  } catch {
-    setSpeechStatus('No speech playback method succeeded.')
-  }
+function formatLiveToolLabel(name?: string) {
+  if (name === 'show_items') return 'Showing products'
+  if (name === 'add_items') return 'Adding outfit'
+  if (name === 'expand_item') return 'Opening product'
+  if (name === 'clear_outfit') return 'Clearing outfit'
+  if (name === 'render_try_on') return 'Rendering try-on'
+  return name ?? 'Tool'
 }

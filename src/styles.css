@@ -388,7 +388,7 @@ main {
   left: 1rem;
   z-index: 4;
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto auto;
   gap: 0.8rem;
   align-items: center;
   padding: 0.55rem;
@@ -398,6 +398,57 @@ main {
   background: rgba(255, 255, 255, 0.78);
   box-shadow: var(--shadow-float);
   backdrop-filter: blur(28px) saturate(1.4);
+}
+
+.ai-processing-pill {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 3rem;
+  padding: 0 0.9rem;
+  border: 1px solid rgba(17, 19, 24, 0.08);
+  border-radius: 999px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 0.78rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.ai-processing-pill.input-hearing {
+  color: #0f5132;
+  background: rgba(220, 252, 231, 0.9);
+}
+
+.ai-processing-pill.input-muted {
+  color: #7c2d12;
+  background: rgba(255, 237, 213, 0.94);
+}
+
+.input-state-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #8e8e93;
+}
+
+.input-hearing .input-state-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.38);
+  animation: pulse-thinking 1s ease-out infinite;
+}
+
+.input-muted .input-state-dot {
+  background: #f97316;
+}
+
+.thinking-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #111318;
+  box-shadow: 0 0 0 0 rgba(17, 19, 24, 0.34);
+  animation: pulse-thinking 1.05s ease-out infinite;
 }
 
 .live-topbar strong,
@@ -804,6 +855,44 @@ main {
   transition: width 120ms linear;
 }
 
+.assistant-status-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0 0.65rem;
+  border: 1px solid rgba(17, 19, 24, 0.08);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.76);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.status-chip.input-hearing {
+  color: #0f5132;
+  background: rgba(220, 252, 231, 0.9);
+}
+
+.status-chip.input-muted {
+  color: #7c2d12;
+  background: rgba(255, 237, 213, 0.94);
+}
+
+.status-chip.tool-active {
+  color: #1d4ed8;
+  background: rgba(219, 234, 254, 0.92);
+}
+
+.status-chip.processing-active {
+  color: var(--ink);
+}
+
 .recording-dot {
   width: 0.72rem;
   height: 0.72rem;
@@ -821,6 +910,26 @@ main {
   100% {
     box-shadow: 0 0 0 0.8rem rgba(229, 69, 69, 0);
   }
+}
+
+@keyframes pulse-thinking {
+  100% {
+    box-shadow: 0 0 0 0.7rem rgba(17, 19, 24, 0);
+  }
+}
+
+.assistant-processing-card {
+  display: inline-flex;
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(17, 19, 24, 0.08);
+  border-radius: 1.1rem;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+  font-size: 0.85rem;
+  font-weight: 850;
 }
 
 .assistant-card,
@@ -1080,6 +1189,12 @@ main {
   border-top-color: var(--accent-strong);
   border-radius: 999px;
   animation: spin 900ms linear infinite;
+}
+
+.render-loader.compact {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-width: 2px;
 }
 
 @keyframes spin {
