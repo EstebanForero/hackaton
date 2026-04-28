@@ -4,6 +4,7 @@ import { slotLabels } from './outfit'
 import type {
   LiveEvent,
   LiveInputMode,
+  LiveMicSettings,
   OutfitGroup,
   OutfitSlot,
   TryOnResult,
@@ -304,6 +305,7 @@ type OptionsModalProps = {
   alwaysListening: boolean
   selectedAudioInputId: string
   audioInputs: MediaDeviceInfo[]
+  liveMicSettings: LiveMicSettings
   micTestStatus: string
   micTrackSettings: string
   liveMicLevel: number
@@ -317,6 +319,7 @@ type OptionsModalProps = {
   onStartRecording: () => void
   onStopRecording: () => void
   onSelectAudioInput: (deviceId: string) => void
+  onChangeLiveMicSettings: (settings: Partial<LiveMicSettings>) => void
   onRefreshAudioInputs: () => void
   onStartMicTest: () => void
   onSendLiveTextTest: () => void
@@ -329,6 +332,7 @@ export function OptionsModal({
   alwaysListening,
   selectedAudioInputId,
   audioInputs,
+  liveMicSettings,
   micTestStatus,
   micTrackSettings,
   liveMicLevel,
@@ -342,6 +346,7 @@ export function OptionsModal({
   onStartRecording,
   onStopRecording,
   onSelectAudioInput,
+  onChangeLiveMicSettings,
   onRefreshAudioInputs,
   onStartMicTest,
   onSendLiveTextTest,
@@ -403,6 +408,75 @@ export function OptionsModal({
             )}
           </select>
         </label>
+        <div className="mic-tuning">
+          <label className="mic-picker">
+            <span>Start sensitivity</span>
+            <select
+              value={liveMicSettings.startSensitivity}
+              onChange={(event) =>
+                onChangeLiveMicSettings({
+                  startSensitivity: event.target.value as LiveMicSettings['startSensitivity'],
+                })
+              }
+              disabled={alwaysListening}
+            >
+              <option value="high">High - hear speech sooner</option>
+              <option value="low">Low - avoid false starts</option>
+            </select>
+          </label>
+          <label className="mic-picker">
+            <span>End sensitivity</span>
+            <select
+              value={liveMicSettings.endSensitivity}
+              onChange={(event) =>
+                onChangeLiveMicSettings({
+                  endSensitivity: event.target.value as LiveMicSettings['endSensitivity'],
+                })
+              }
+              disabled={alwaysListening}
+            >
+              <option value="high">High - answer sooner</option>
+              <option value="low">Low - wait through pauses</option>
+            </select>
+          </label>
+          <label className="mic-slider">
+            <span>Speech padding {liveMicSettings.prefixPaddingMs} ms</span>
+            <input
+              type="range"
+              min="100"
+              max="1000"
+              step="50"
+              value={liveMicSettings.prefixPaddingMs}
+              onChange={(event) =>
+                onChangeLiveMicSettings({
+                  prefixPaddingMs: Number(event.target.value),
+                })
+              }
+              disabled={alwaysListening}
+            />
+          </label>
+          <label className="mic-slider">
+            <span>Silence before answer {liveMicSettings.silenceDurationMs} ms</span>
+            <input
+              type="range"
+              min="250"
+              max="2000"
+              step="50"
+              value={liveMicSettings.silenceDurationMs}
+              onChange={(event) =>
+                onChangeLiveMicSettings({
+                  silenceDurationMs: Number(event.target.value),
+                })
+              }
+              disabled={alwaysListening}
+            />
+          </label>
+        </div>
+        {alwaysListening ? (
+          <small className="live-status">
+            Stop Gemini Live to change mic sensitivity.
+          </small>
+        ) : null}
         <button className="listen-toggle" type="button" onClick={onRefreshAudioInputs}>
           Refresh microphones
         </button>

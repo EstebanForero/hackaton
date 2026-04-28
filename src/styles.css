@@ -388,7 +388,7 @@ main {
   left: 1rem;
   z-index: 4;
   display: grid;
-  grid-template-columns: auto 1fr auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) repeat(4, max-content);
   gap: 0.8rem;
   align-items: center;
   padding: 0.55rem;
@@ -404,6 +404,7 @@ main {
   display: inline-flex;
   gap: 0.45rem;
   align-items: center;
+  max-width: 12rem;
   min-height: 3rem;
   padding: 0 0.9rem;
   border: 1px solid rgba(17, 19, 24, 0.08);
@@ -413,6 +414,8 @@ main {
   font-size: 0.78rem;
   font-weight: 850;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ai-processing-pill.input-hearing {
@@ -426,6 +429,7 @@ main {
 }
 
 .input-state-dot {
+  flex: 0 0 auto;
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 999px;
@@ -443,6 +447,7 @@ main {
 }
 
 .thinking-dot {
+  flex: 0 0 auto;
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 999px;
@@ -454,6 +459,17 @@ main {
 .live-topbar strong,
 .live-topbar span {
   display: block;
+}
+
+.live-topbar > div {
+  min-width: 0;
+}
+
+.live-topbar strong,
+.live-topbar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .live-topbar span {
@@ -783,6 +799,33 @@ main {
   border-radius: 999px;
   color: var(--ink);
   background: rgba(255, 255, 255, 0.9);
+}
+
+.mic-tuning {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(17, 19, 24, 0.08);
+  border-radius: 1.2rem;
+  background: rgba(248, 250, 252, 0.78);
+}
+
+.mic-slider {
+  display: grid;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.mic-slider span {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.mic-slider input {
+  width: 100%;
+  accent-color: #111318;
 }
 
 .options-backdrop {
@@ -1213,6 +1256,14 @@ main {
   .catalog-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .live-topbar {
+    grid-template-columns: auto minmax(0, 1fr) repeat(2, max-content);
+  }
+
+  .live-topbar .ai-processing-pill {
+    display: none;
+  }
 }
 
 @media (max-width: 620px) {
@@ -1237,5 +1288,9 @@ main {
   .floating-products.has-items {
     grid-template-columns: 1fr;
     width: min(22rem, calc(100% - 2rem));
+  }
+
+  .mic-tuning {
+    grid-template-columns: 1fr;
   }
 }

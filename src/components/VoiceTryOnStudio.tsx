@@ -34,11 +34,13 @@ import { speakAssistantReply } from './studio/speech'
 import type {
   LiveEvent,
   LiveInputMode,
+  LiveMicSettings,
   OutfitGroup,
   OutfitSlot,
   TryOnResult,
   VoiceDebugInfo,
 } from './studio/types'
+import { defaultLiveMicSettings } from './studio/types'
 
 type StudioProps = {
   products: Product[]
@@ -94,6 +96,8 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   const [liveEvents, setLiveEvents] = React.useState<LiveEvent[]>([])
   const [liveMicLevel, setLiveMicLevel] = React.useState(0)
   const [liveChunksSent, setLiveChunksSent] = React.useState(0)
+  const [liveMicSettings, setLiveMicSettings] =
+    React.useState<LiveMicSettings>(defaultLiveMicSettings)
   const [audioInputs, setAudioInputs] = React.useState<MediaDeviceInfo[]>([])
   const [selectedAudioInputId, setSelectedAudioInputId] = React.useState('')
   const [micTestStatus, setMicTestStatus] = React.useState(
@@ -663,7 +667,10 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
           Type,
         },
         tokenResult,
-      ] = await Promise.all([import('@google/genai'), createLiveSessionToken()])
+      ] = await Promise.all([
+        import('@google/genai'),
+        createLiveSessionToken({ data: liveMicSettings }),
+      ])
       appendLiveEvent(
         `Received ephemeral token for ${tokenResult.model} with tools: ${tokenResult.toolNames.join(', ')}.`,
       )
@@ -697,7 +704,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
             EndSensitivity,
             StartSensitivity,
             TurnCoverage,
-          }),
+          }, liveMicSettings),
           systemInstruction: {
             parts: [{ text: buildLiveSystemInstruction(products) }],
           },
@@ -808,7 +815,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
               setLiveProcessingLabel(
                 functionCall.name === 'render_try_on'
                   ? 'Rendering outfit'
-                  : `Using tool: ${toolLabel}`,
+                  : toolLabel,
               )
               appendLiveEvent(`Tool call: ${functionCall.name}.`)
               handleLiveToolCall(functionCall)
@@ -902,6 +909,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   }, [
     appendLiveEvent,
     handleLiveToolCall,
+    liveMicSettings,
     products,
     refreshAudioInputs,
     selectedAudioInputId,
@@ -1163,6 +1171,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
           alwaysListening={alwaysListening}
           selectedAudioInputId={selectedAudioInputId}
           audioInputs={audioInputs}
+          liveMicSettings={liveMicSettings}
           micTestStatus={micTestStatus}
           micTrackSettings={micTrackSettings}
           liveMicLevel={liveMicLevel}
@@ -1176,6 +1185,12 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
           onStartRecording={startRecording}
           onStopRecording={stopRecording}
           onSelectAudioInput={setSelectedAudioInputId}
+          onChangeLiveMicSettings={(nextSettings) =>
+            setLiveMicSettings((currentSettings) => ({
+              ...currentSettings,
+              ...nextSettings,
+            }))
+          }
           onRefreshAudioInputs={refreshAudioInputs}
           onStartMicTest={startMicTest}
           onSendLiveTextTest={sendLiveTextTest}
@@ -1189,7 +1204,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
 
 function formatLiveInputLabel(mode: LiveInputMode) {
   if (mode === 'hearing') return 'Hearing you'
-  if (mode === 'muted') return 'Mic paused while AI speaks'
+  if (mode === 'muted') return 'Mic paused'
   if (mode === 'recording') return 'Recording'
   if (mode === 'listening') return 'Listening'
   return 'Mic idle'

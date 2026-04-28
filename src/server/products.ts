@@ -6,6 +6,7 @@ import { db } from '#/db/client'
 import { products, type Product } from '#/db/schema'
 import {
   buildRealtimeInputConfig,
+  defaultLiveMicSettings,
   getChatModel,
   getImageModel,
   getLiveModel,
@@ -297,8 +298,32 @@ export const processTextCommand = createServerFn({ method: 'POST' })
     return voiceCommandResponse.parse(JSON.parse(response.text ?? '{}'))
   })
 
-export const createLiveSessionToken = createServerFn({ method: 'POST' }).handler(
-  async () => {
+const liveMicSettingsInput = z
+  .object({
+    startSensitivity: z.enum(['high', 'low']).default(
+      defaultLiveMicSettings.startSensitivity,
+    ),
+    endSensitivity: z.enum(['high', 'low']).default(
+      defaultLiveMicSettings.endSensitivity,
+    ),
+    prefixPaddingMs: z
+      .number()
+      .int()
+      .min(100)
+      .max(1000)
+      .default(defaultLiveMicSettings.prefixPaddingMs),
+    silenceDurationMs: z
+      .number()
+      .int()
+      .min(250)
+      .max(2000)
+      .default(defaultLiveMicSettings.silenceDurationMs),
+  })
+  .default(defaultLiveMicSettings)
+
+export const createLiveSessionToken = createServerFn({ method: 'POST' })
+  .inputValidator(liveMicSettingsInput)
+  .handler(async ({ data }) => {
     if (!process.env.GEMINI_API_KEY) {
       throw new Error('GEMINI_API_KEY is required for Gemini Live API.')
     }
@@ -317,7 +342,7 @@ export const createLiveSessionToken = createServerFn({ method: 'POST' }).handler
             responseModalities: [Modality.AUDIO],
             inputAudioTranscription: {},
             outputAudioTranscription: {},
-            realtimeInputConfig: buildRealtimeInputConfig(),
+            realtimeInputConfig: buildRealtimeInputConfig(data),
             speechConfig: {
               voiceConfig: {
                 prebuiltVoiceConfig: {
@@ -350,8 +375,7 @@ export const createLiveSessionToken = createServerFn({ method: 'POST' }).handler
         'render_try_on',
       ],
     }
-  },
-)
+  })
 
 const voiceCommandResponse = z.object({
   status: z.literal('ok').default('ok'),

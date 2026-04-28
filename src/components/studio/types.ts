@@ -40,6 +40,22 @@ export type LiveInputMode =
   | 'muted'
   | 'recording'
 
+export type LiveSensitivityLevel = 'high' | 'low'
+
+export type LiveMicSettings = {
+  startSensitivity: LiveSensitivityLevel
+  endSensitivity: LiveSensitivityLevel
+  prefixPaddingMs: number
+  silenceDurationMs: number
+}
+
+export const defaultLiveMicSettings: LiveMicSettings = {
+  startSensitivity: 'high',
+  endSensitivity: 'high',
+  prefixPaddingMs: 400,
+  silenceDurationMs: 700,
+}
+
 export type TryOnResult = {
   imageUrl: string
   message: string

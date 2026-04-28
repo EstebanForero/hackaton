@@ -1,4 +1,5 @@
 import type { Product } from '#/db/schema'
+import type { LiveMicSettings } from './types'
 
 type LiveEnums = {
   ActivityHandling: typeof import('@google/genai').ActivityHandling
@@ -97,13 +98,19 @@ export function buildLiveRealtimeInputConfig({
   EndSensitivity,
   StartSensitivity,
   TurnCoverage,
-}: LiveEnums) {
+}: LiveEnums, micSettings: LiveMicSettings) {
   return {
     automaticActivityDetection: {
-      startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
-      endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
-      prefixPaddingMs: 500,
-      silenceDurationMs: 1100,
+      startOfSpeechSensitivity:
+        micSettings.startSensitivity === 'high'
+          ? StartSensitivity.START_SENSITIVITY_HIGH
+          : StartSensitivity.START_SENSITIVITY_LOW,
+      endOfSpeechSensitivity:
+        micSettings.endSensitivity === 'high'
+          ? EndSensitivity.END_SENSITIVITY_HIGH
+          : EndSensitivity.END_SENSITIVITY_LOW,
+      prefixPaddingMs: micSettings.prefixPaddingMs,
+      silenceDurationMs: micSettings.silenceDurationMs,
     },
     activityHandling: ActivityHandling.NO_INTERRUPTION,
     turnCoverage: TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
