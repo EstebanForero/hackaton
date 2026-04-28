@@ -1,5 +1,6 @@
 import { GoogleGenAI, Modality } from '@google/genai'
 import { createServerFn } from '@tanstack/react-start'
+import { createHash } from 'node:crypto'
 import { and, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '#/db/client'
@@ -115,6 +116,12 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
         orderedProducts.map((product) => fetchImageAsInlineData(product.imageUrl)),
       )
       const userPhoto = parseImageDataUrl(data.photoDataUrl)
+      logTryOnGeminiImages({
+        requestedProductIds: data.productIds,
+        products: orderedProducts,
+        userPhoto,
+        referenceImages,
+      })
       const response = await ai.models.generateContent({
         model: getImageModel(),
         contents: [
@@ -390,6 +397,55 @@ export const createLiveSessionToken = createServerFn({ method: 'POST' })
       ],
     }
   })
+
+function logTryOnGeminiImages({
+  requestedProductIds,
+  products: orderedProducts,
+  userPhoto,
+  referenceImages,
+}: {
+  requestedProductIds: string[]
+  products: Product[]
+  userPhoto: { mimeType: string; base64: string }
+  referenceImages: Array<{ mimeType: string; base64: string }>
+}) {
+  const imageLog = {
+    requestedProductIds,
+    orderedProductIds: orderedProducts.map((product) => product.id),
+    customerCameraImage: describeInlineImage(userPhoto),
+    garmentReferenceImages: orderedProducts.map((product, index) => ({
+      index: index + 1,
+      productId: product.id,
+      productName: product.name,
+      category: product.category,
+      imageUrl: product.imageUrl,
+      imageDescription: product.imageDescription,
+      inlineImage: describeInlineImage(referenceImages[index]),
+    })),
+  }
+
+  console.info('[try-on] Gemini image request payload', imageLog)
+}
+
+function describeInlineImage(image?: { mimeType: string; base64: string }) {
+  if (!image) {
+    return {
+      mimeType: '',
+      bytes: 0,
+      sha256: '',
+      base64Prefix: '',
+    }
+  }
+
+  const bytes = Buffer.from(image.base64, 'base64')
+
+  return {
+    mimeType: image.mimeType,
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    base64Prefix: image.base64.slice(0, 48),
+  }
+}
 
 const voiceCommandResponse = z.object({
   status: z.literal('ok').default('ok'),

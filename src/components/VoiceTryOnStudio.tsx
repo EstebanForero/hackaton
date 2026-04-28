@@ -73,6 +73,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   const liveLastFinishedTranscriptRef = React.useRef('')
   const liveLastFinishedTranscriptAtRef = React.useRef(0)
   const assistantSpeakingUntilRef = React.useRef(0)
+  const userLanguageRef = React.useRef<'en' | 'es'>('en')
   const liveInputModeRef = React.useRef<LiveInputMode>('idle')
   const suppressLiveAudioRef = React.useRef(false)
   const awaitingTryOnFeedbackRef = React.useRef(false)
@@ -128,6 +129,10 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
 
   function applyPlannerResult(result: VoiceDebugInfo) {
     setVoiceDebugInfo(result)
+    userLanguageRef.current = detectUserLanguage(
+      result.transcript || result.reply || result.question,
+      userLanguageRef.current,
+    )
 
     if (result.clearOutfit) {
       setVisibleItems([])
@@ -350,6 +355,14 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
         question: result.question,
         model: result.model,
       })
+      const shouldSpeakPlannerReply =
+        result.needsClarification ||
+        result.addProductIds.length > 0 ||
+        Boolean(result.expandedProductId) ||
+        result.clearOutfit
+      if (shouldSpeakPlannerReply && !result.tryOnRequested) {
+        speak(result.needsClarification && result.question ? result.question : result.reply)
+      }
     },
     onError: (error) => {
       const reason = error instanceof Error ? error.message : 'unknown error'
@@ -525,6 +538,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   const requestTryOn = React.useCallback(
     (prompt: string, immediateProducts: Product[] = []) => {
       const photoDataUrl = capturePhoto()
+      const language = userLanguageRef.current
       const finalOutfit = buildRenderableOutfit(
         selectedOutfitRef.current,
         immediateProducts,
@@ -534,9 +548,14 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
         const selectedCount = selectedOutfitRef.current.length
         const immediateCount = immediateProducts.length
         const cameraState = cameraReadyRef.current ? 'ready' : 'not ready'
-        const message = !photoDataUrl
-          ? `I cannot render yet because the camera frame is missing. Camera is ${cameraState}, selected outfit items: ${selectedCount}, immediate items: ${immediateCount}.`
-          : `I cannot render yet because no outfit item is available in the render request. Selected outfit items: ${selectedCount}, immediate items: ${immediateCount}.`
+        const message =
+          language === 'es'
+            ? !photoDataUrl
+              ? `No puedo renderizar todavía porque falta la imagen de la cámara. La cámara está ${cameraState === 'ready' ? 'lista' : 'sin estar lista'}, prendas seleccionadas: ${selectedCount}, prendas inmediatas: ${immediateCount}.`
+              : `No puedo renderizar todavía porque no hay prendas para usar. Prendas seleccionadas: ${selectedCount}, prendas inmediatas: ${immediateCount}.`
+            : !photoDataUrl
+              ? `I cannot render yet because the camera frame is missing. Camera is ${cameraState}, selected outfit items: ${selectedCount}, immediate items: ${immediateCount}.`
+              : `I cannot render yet because no outfit item is available in the render request. Selected outfit items: ${selectedCount}, immediate items: ${immediateCount}.`
         setRenderDebugStatus(message)
         appendLiveEvent(`Render blocked: ${message}`)
         setAssistantReply(message)
@@ -545,7 +564,10 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       }
 
       const outfitNames = finalOutfit.map((product) => product.name).join(', ')
-      const message = `Taking a photo and preparing a virtual try-on with ${outfitNames}. Please wait a moment while the outfit finishes rendering.`
+      const message =
+        language === 'es'
+          ? `Estoy tomando la foto y preparando el probador virtual con ${outfitNames}. Espera un momento mientras termina de renderizarse el outfit.`
+          : `Taking a photo and preparing a virtual try-on with ${outfitNames}. Please wait a moment while the outfit finishes rendering.`
       setExpandedProduct(null)
       suppressLiveAudioRef.current = true
       awaitingTryOnFeedbackRef.current = false
@@ -651,10 +673,16 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
 
       if (functionCall.name === 'add_items') {
         addMatchesToOutfit(resolvedProducts, 'Selected by Gemini Live.')
+        if (resolvedProducts.length) {
+          speak(localizedToolAck('add_items', userLanguageRef.current, resolvedProducts))
+        }
       }
 
       if (functionCall.name === 'expand_item') {
         setExpandedProduct(resolvedProducts[0] ?? null)
+        if (resolvedProducts.length) {
+          speak(localizedToolAck('expand_item', userLanguageRef.current, resolvedProducts))
+        }
       }
 
       if (functionCall.name === 'clear_outfit') {
@@ -662,6 +690,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
         setOutfitGroups([])
         setExpandedProduct(null)
         setTryOnResult(null)
+        speak(localizedToolAck('clear_outfit', userLanguageRef.current, []))
       }
 
       if (functionCall.name === 'render_try_on') {
@@ -678,7 +707,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
         'SILENT',
       )
     },
-    [addMatchesToOutfit, appendLiveEvent, products, requestTryOn, sendLiveToolResponse],
+    [addMatchesToOutfit, appendLiveEvent, products, requestTryOn, sendLiveToolResponse, speak],
   )
 
   const startLiveSession = React.useCallback(async () => {
@@ -771,6 +800,10 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
 
             const inputText = message.serverContent?.inputTranscription?.text
             if (inputText) {
+              userLanguageRef.current = detectUserLanguage(
+                inputText,
+                userLanguageRef.current,
+              )
               appendLiveEvent(`Heard: ${inputText}`)
               const now = Date.now()
               const isImmediateDuplicateTranscript =
@@ -1248,6 +1281,49 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       ) : null}
     </section>
   )
+}
+
+function detectUserLanguage(text: string, fallback: 'en' | 'es'): 'en' | 'es' {
+  const normalized = text.toLowerCase()
+
+  if (
+    /[áéíóúñ¿¡]/i.test(text) ||
+    /\b(el|la|los|las|un|una|por|para|quiero|muestr|agrega|añade|pon|renderiza|espera|prueba|ropa|zapatos|camisa|pantal[oó]n|vestido)\b/.test(
+      normalized,
+    )
+  ) {
+    return 'es'
+  }
+
+  if (
+    /\b(the|show|add|choose|pick|render|try|outfit|shirt|pants|dress|shoes|jacket|wait)\b/.test(
+      normalized,
+    )
+  ) {
+    return 'en'
+  }
+
+  return fallback
+}
+
+function localizedToolAck(
+  toolName: string,
+  language: 'en' | 'es',
+  products: Product[],
+) {
+  const productNames = products.map((product) => product.name).join(', ')
+
+  if (language === 'es') {
+    if (toolName === 'add_items') return `Listo, agregué ${productNames} al outfit.`
+    if (toolName === 'expand_item') return `Listo, te muestro ${productNames} más grande.`
+    if (toolName === 'clear_outfit') return 'Listo, limpié el outfit.'
+    return 'Listo.'
+  }
+
+  if (toolName === 'add_items') return `Done, I added ${productNames} to the outfit.`
+  if (toolName === 'expand_item') return `Done, opening ${productNames}.`
+  if (toolName === 'clear_outfit') return 'Done, I cleared the outfit.'
+  return 'Done.'
 }
 
 function formatLiveInputLabel(mode: LiveInputMode) {
