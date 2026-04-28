@@ -115,7 +115,7 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
               { text: generationPrompt },
               {
                 text:
-                  'CUSTOMER_CAMERA_IMAGE_START: edit this image. Keep the person and camera scene; only replace/add the selected garments.',
+                  'CUSTOMER_CAMERA_IMAGE_START: this is the original picture of the real customer. Edit this image. Keep this exact person, face, hair, skin tone, body, pose, lighting, and camera scene; only replace/add the selected garments.',
               },
               {
                 inlineData: {
@@ -125,7 +125,7 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
               },
               {
                 text:
-                  'CUSTOMER_CAMERA_IMAGE_END. The following images are exact selected garment references. Do not invent product design, pattern, color, logos, pockets, or silhouette beyond these references.',
+                  'CUSTOMER_CAMERA_IMAGE_END. The following images are exact selected garment references only. Do not use the people, bodies, poses, faces, skin, hair, or backgrounds from reference images. Do not invent product design, pattern, color, logos, pockets, or silhouette beyond these references.',
               },
               ...referenceImages.flatMap((image, index) => {
                 const product = selectedProducts[index]

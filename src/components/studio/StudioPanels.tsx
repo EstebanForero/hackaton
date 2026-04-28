@@ -384,150 +384,159 @@ export function OptionsModal({
               : 'Fallback: hold to talk'}
         </button>
 
-        <label className="mic-picker">
-          <span>Microphone</span>
-          <select
-            value={selectedAudioInputId}
-            onChange={(event) => onSelectAudioInput(event.target.value)}
-            disabled={alwaysListening || recordingState !== 'idle'}
-          >
-            {audioInputs.length ? (
-              <>
-                <option value="default">System default microphone</option>
-                {audioInputs.map((input, index) => (
-                  <option
-                    key={`${input.deviceId || 'empty'}-${input.groupId || 'group'}-${index}`}
-                    value={input.deviceId}
-                  >
-                    {formatAudioInputLabel(input, index)}
-                  </option>
-                ))}
-              </>
-            ) : (
-              <option value="default">System default microphone</option>
-            )}
-          </select>
-        </label>
-        <div className="mic-tuning">
-          <label className="mic-picker">
-            <span>Start sensitivity</span>
-            <select
-              value={liveMicSettings.startSensitivity}
-              onChange={(event) =>
-                onChangeLiveMicSettings({
-                  startSensitivity: event.target.value as LiveMicSettings['startSensitivity'],
-                })
-              }
-              disabled={alwaysListening}
-            >
-              <option value="high">High - hear speech sooner</option>
-              <option value="low">Low - avoid false starts</option>
-            </select>
-          </label>
-          <label className="mic-picker">
-            <span>End sensitivity</span>
-            <select
-              value={liveMicSettings.endSensitivity}
-              onChange={(event) =>
-                onChangeLiveMicSettings({
-                  endSensitivity: event.target.value as LiveMicSettings['endSensitivity'],
-                })
-              }
-              disabled={alwaysListening}
-            >
-              <option value="high">High - answer sooner</option>
-              <option value="low">Low - wait through pauses</option>
-            </select>
-          </label>
-          <label className="mic-slider">
-            <span>Speech padding {liveMicSettings.prefixPaddingMs} ms</span>
-            <input
-              type="range"
-              min="100"
-              max="1000"
-              step="50"
-              value={liveMicSettings.prefixPaddingMs}
-              onChange={(event) =>
-                onChangeLiveMicSettings({
-                  prefixPaddingMs: Number(event.target.value),
-                })
-              }
-              disabled={alwaysListening}
-            />
-          </label>
-          <label className="mic-slider">
-            <span>Silence before answer {liveMicSettings.silenceDurationMs} ms</span>
-            <input
-              type="range"
-              min="250"
-              max="2000"
-              step="50"
-              value={liveMicSettings.silenceDurationMs}
-              onChange={(event) =>
-                onChangeLiveMicSettings({
-                  silenceDurationMs: Number(event.target.value),
-                })
-              }
-              disabled={alwaysListening}
-            />
-          </label>
-        </div>
-        {alwaysListening ? (
-          <small className="live-status">
-            Stop Gemini Live to change mic sensitivity.
-          </small>
-        ) : null}
-        <button className="listen-toggle" type="button" onClick={onRefreshAudioInputs}>
-          Refresh microphones
-        </button>
-        <button className="listen-toggle" type="button" onClick={onStartMicTest}>
-          Test selected mic
-        </button>
-        <small className="live-status">{micTestStatus}</small>
-        {micTrackSettings ? (
-          <details className="debug-panel">
-            <summary>Selected mic track settings</summary>
-            <pre className="track-settings">{micTrackSettings}</pre>
-          </details>
-        ) : null}
-        <small className="live-status">
-          Mic level {liveMicLevel.toFixed(3)} · chunks sent {liveChunksSent}
-        </small>
-        <button className="listen-toggle" type="button" onClick={onSendLiveTextTest}>
-          Send Live text test
-        </button>
-        <details className="debug-panel">
-          <summary>Live API events</summary>
-          {liveEvents.length ? (
-            <ul className="live-events">
-              {liveEvents.map((event) => (
-                <li key={event.id}>{event.text}</li>
-              ))}
-            </ul>
-          ) : (
-            <p>No Live events yet.</p>
-          )}
-        </details>
-
-        <div className="assistant-card">
-          <span>Assistant</span>
-          <p>{assistantReply}</p>
-          <div className="speech-controls">
-            <button type="button" onClick={onReplayAssistant}>
-              Replay voice
+        <div className="options-layout">
+          <div className="options-main">
+            <label className="mic-picker">
+              <span>Microphone</span>
+              <select
+                value={selectedAudioInputId}
+                onChange={(event) => onSelectAudioInput(event.target.value)}
+                disabled={alwaysListening || recordingState !== 'idle'}
+              >
+                {audioInputs.length ? (
+                  <>
+                    <option value="default">System default microphone</option>
+                    {audioInputs.map((input, index) => (
+                      <option
+                        key={`${input.deviceId || 'empty'}-${input.groupId || 'group'}-${index}`}
+                        value={input.deviceId}
+                      >
+                        {formatAudioInputLabel(input, index)}
+                      </option>
+                    ))}
+                  </>
+                ) : (
+                  <option value="default">System default microphone</option>
+                )}
+              </select>
+            </label>
+            <button className="listen-toggle" type="button" onClick={onRefreshAudioInputs}>
+              Refresh microphones
             </button>
-            <small>{speechStatus}</small>
-          </div>
-        </div>
+            <button className="listen-toggle" type="button" onClick={onStartMicTest}>
+              Test selected mic
+            </button>
+            <small className="live-status">{micTestStatus}</small>
+            {micTrackSettings ? (
+              <details className="debug-panel">
+                <summary>Selected mic track settings</summary>
+                <pre className="track-settings">{micTrackSettings}</pre>
+              </details>
+            ) : null}
+            <small className="live-status">
+              Mic level {liveMicLevel.toFixed(3)} · chunks sent {liveChunksSent}
+            </small>
+            <button className="listen-toggle" type="button" onClick={onSendLiveTextTest}>
+              Send Live text test
+            </button>
+            <details className="debug-panel">
+              <summary>Live API events</summary>
+              {liveEvents.length ? (
+                <ul className="live-events">
+                  {liveEvents.map((event) => (
+                    <li key={event.id}>{event.text}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No Live events yet.</p>
+              )}
+            </details>
 
-        <details
-          className="debug-panel"
-          open={debugOpen}
-          onToggle={(event) => onToggleDebug(event.currentTarget.open)}
-        >
-          <summary>Debug voice understanding</summary>
-          {voiceDebugInfo ? <DebugVoiceInfo info={voiceDebugInfo} /> : <p>No voice request processed yet.</p>}
-        </details>
+            <div className="assistant-card">
+              <span>Assistant</span>
+              <p>{assistantReply}</p>
+              <div className="speech-controls">
+                <button type="button" onClick={onReplayAssistant}>
+                  Replay voice
+                </button>
+                <small>{speechStatus}</small>
+              </div>
+            </div>
+
+            <details
+              className="debug-panel"
+              open={debugOpen}
+              onToggle={(event) => onToggleDebug(event.currentTarget.open)}
+            >
+              <summary>Debug voice understanding</summary>
+              {voiceDebugInfo ? <DebugVoiceInfo info={voiceDebugInfo} /> : <p>No voice request processed yet.</p>}
+            </details>
+          </div>
+
+          <aside className="settings-sidebar" aria-label="Live mic sensitivity">
+            <div className="sidebar-heading">
+              <span>Gemini Live mic</span>
+              <strong>Sensitivity</strong>
+            </div>
+            <label className="mic-picker">
+              <span>Start sensitivity</span>
+              <select
+                value={liveMicSettings.startSensitivity}
+                onChange={(event) =>
+                  onChangeLiveMicSettings({
+                    startSensitivity: event.target.value as LiveMicSettings['startSensitivity'],
+                  })
+                }
+                disabled={alwaysListening}
+              >
+                <option value="high">High - hear speech sooner</option>
+                <option value="low">Low - avoid false starts</option>
+              </select>
+            </label>
+            <label className="mic-picker">
+              <span>End sensitivity</span>
+              <select
+                value={liveMicSettings.endSensitivity}
+                onChange={(event) =>
+                  onChangeLiveMicSettings({
+                    endSensitivity: event.target.value as LiveMicSettings['endSensitivity'],
+                  })
+                }
+                disabled={alwaysListening}
+              >
+                <option value="high">High - answer sooner</option>
+                <option value="low">Low - wait through pauses</option>
+              </select>
+            </label>
+            <label className="mic-slider">
+              <span>Speech padding {liveMicSettings.prefixPaddingMs} ms</span>
+              <input
+                type="range"
+                min="100"
+                max="1000"
+                step="50"
+                value={liveMicSettings.prefixPaddingMs}
+                onChange={(event) =>
+                  onChangeLiveMicSettings({
+                    prefixPaddingMs: Number(event.target.value),
+                  })
+                }
+                disabled={alwaysListening}
+              />
+            </label>
+            <label className="mic-slider">
+              <span>Silence before answer {liveMicSettings.silenceDurationMs} ms</span>
+              <input
+                type="range"
+                min="250"
+                max="2000"
+                step="50"
+                value={liveMicSettings.silenceDurationMs}
+                onChange={(event) =>
+                  onChangeLiveMicSettings({
+                    silenceDurationMs: Number(event.target.value),
+                  })
+                }
+                disabled={alwaysListening}
+              />
+            </label>
+            {alwaysListening ? (
+              <small className="live-status">
+                Stop Gemini Live to change mic sensitivity.
+              </small>
+            ) : null}
+          </aside>
+        </div>
       </div>
     </div>
   )

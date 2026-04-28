@@ -138,12 +138,14 @@ export function buildTryOnPrompt(
     .join(' ')
 
   return [
-    'Edit the first image, which is the customer camera photo.',
-    'Use ONLY the selected garment reference images that follow the camera photo. Do not use memory, brand assumptions, or generic clothing.',
+    'Edit the first image, which is the original customer camera photo and the only source for the real person.',
+    'Keep the person from the original camera photo the same: same face, hair, skin tone, body shape, proportions, pose, expression, age, identity, lighting, and store scene.',
+    'Use the garment reference images only as clothing references. Do not copy the model, face, body, pose, skin, hair, hands, background, or identity from any garment reference image.',
+    'Use ONLY the selected garment reference images that follow the camera photo for garment design. Do not use memory, brand assumptions, or generic clothing.',
     `Selected garments to apply exactly: ${garmentDescriptions}`,
     'Transfer the exact visible garment design from each reference image: color, fabric, collar, sleeves, pockets, pattern, buttons, zipper, hem, silhouette, and proportions.',
     'Place the referenced garments realistically on the person in the camera photo: align to body pose, preserve natural folds, scale, occlusion, and perspective.',
-    'Preserve the user identity, face, hair, skin tone, pose, lighting, body proportions, and store environment.',
+    'Preserve the real customer identity and camera-photo body exactly; only the clothing should change.',
     'Do not return the original image unchanged. The output must visibly dress the customer in the selected garment reference images.',
     'Use only one final item per outfit group unless the groups are complementary accessories.',
     `Styling instruction from voice assistant: ${userPrompt}`,
