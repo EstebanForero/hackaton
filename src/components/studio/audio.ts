@@ -96,63 +96,40 @@ export function playLivePcm(
   playerRef: React.RefObject<PCMPlayer | null>,
   contextRef: React.RefObject<AudioContext | null>,
   queueEndTimeRef: React.MutableRefObject<number>,
+  sourcesRef?: React.RefObject<Set<AudioBufferSourceNode>>,
 ) {
-  const player = playerRef.current
   const context = contextRef.current
-  if (!player || !context) return 0
+  if (!context) return 0
 
   const sourceSampleRate = readPcmSampleRate(mimeType)
   const targetSampleRate = context.sampleRate
   const pcm = base64ToInt16Array(base64Pcm)
+  const audio = sourceSampleRate === targetSampleRate
+    ? pcm16ToFloat32(pcm)
+    : resamplePcm16ToFloat32(pcm, sourceSampleRate, targetSampleRate)
+  if (!audio.length) return 0
 
-  if (sourceSampleRate === targetSampleRate) {
-    player.playAudio(applyPcmFade(pcm))
-    queueEndTimeRef.current =
-      Math.max(queueEndTimeRef.current, context.currentTime) +
-      pcm.length / targetSampleRate
-    return Math.max(0, queueEndTimeRef.current - context.currentTime)
+  const buffer = context.createBuffer(1, audio.length, targetSampleRate)
+  buffer.copyToChannel(audio, 0)
+  const source = context.createBufferSource()
+  source.buffer = buffer
+
+  const volume = playerRef.current?.volumePercentage ?? 72
+  const gain = context.createGain()
+  gain.gain.value = volume / 100
+  source.connect(gain)
+  gain.connect(context.destination)
+
+  const startAt = Math.max(queueEndTimeRef.current, context.currentTime + 0.045)
+  sourcesRef?.current.add(source)
+  source.onended = () => {
+    sourcesRef?.current.delete(source)
+    gain.disconnect()
   }
-
-  const resampled = resamplePcm16ToFloat32(
-    pcm,
-    sourceSampleRate,
-    targetSampleRate,
-  )
-  player.playAudio(applyFloatFade(resampled))
+  source.start(startAt)
   queueEndTimeRef.current =
-    Math.max(queueEndTimeRef.current, context.currentTime) +
-    resampled.length / targetSampleRate
+    startAt + buffer.duration
   return Math.max(0, queueEndTimeRef.current - context.currentTime)
-}
-
-function applyPcmFade(input: Int16Array) {
-  const output = new Int16Array(input)
-  const fadeSamples = Math.min(96, Math.floor(output.length / 2))
-
-  for (let i = 0; i < fadeSamples; i += 1) {
-    const inGain = i / fadeSamples
-    const outGain = (fadeSamples - i - 1) / fadeSamples
-    output[i] = Math.round(output[i] * inGain)
-    output[output.length - i - 1] = Math.round(
-      output[output.length - i - 1] * outGain,
-    )
-  }
-
-  return output
-}
-
-function applyFloatFade(input: Float32Array) {
-  const output = new Float32Array(input)
-  const fadeSamples = Math.min(96, Math.floor(output.length / 2))
-
-  for (let i = 0; i < fadeSamples; i += 1) {
-    const inGain = i / fadeSamples
-    const outGain = (fadeSamples - i - 1) / fadeSamples
-    output[i] *= inGain
-    output[output.length - i - 1] *= outGain
-  }
-
-  return output
 }
 
 export function blobToDataUrl(blob: Blob) {
@@ -178,6 +155,16 @@ function base64ToInt16Array(base64: string) {
 function readPcmSampleRate(mimeType: string) {
   const rate = mimeType.match(/rate=(\d+)/i)?.[1]
   return rate ? Number(rate) : 24_000
+}
+
+function pcm16ToFloat32(input: Int16Array) {
+  const output = new Float32Array(input.length)
+
+  for (let i = 0; i < input.length; i += 1) {
+    output[i] = (input[i] ?? 0) / 32768
+  }
+
+  return output
 }
 
 function resamplePcm16ToFloat32(

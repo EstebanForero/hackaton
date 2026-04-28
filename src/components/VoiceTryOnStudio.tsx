@@ -63,6 +63,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   const liveOutputContextRef = React.useRef<AudioContext | null>(null)
   const livePcmPlayerRef = React.useRef<PCMPlayer | null>(null)
   const liveOutputQueueEndTimeRef = React.useRef(0)
+  const liveOutputSourcesRef = React.useRef(new Set<AudioBufferSourceNode>())
   const liveProcessorRef = React.useRef<ScriptProcessorNode | null>(null)
   const liveSourceRef = React.useRef<MediaStreamAudioSourceNode | null>(null)
   const liveSinkRef = React.useRef<GainNode | null>(null)
@@ -713,7 +714,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       })
       await refreshAudioInputs()
       micStreamRef.current = stream
-      const outputContext = new AudioContext({ sampleRate: 24_000 })
+      const outputContext = new AudioContext()
       await outputContext.resume()
       liveOutputContextRef.current = outputContext
       const pcmPlayer = new PCMPlayer(outputContext)
@@ -757,6 +758,14 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
               appendLiveEvent('Model response interrupted.')
               liveOutputQueueEndTimeRef.current =
                 liveOutputContextRef.current?.currentTime ?? 0
+              for (const source of liveOutputSourcesRef.current) {
+                try {
+                  source.stop()
+                } catch {
+                  // Source may have already ended.
+                }
+              }
+              liveOutputSourcesRef.current.clear()
               recentLiveAudioChunksRef.current.clear()
             }
 
@@ -831,6 +840,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
                     livePcmPlayerRef,
                     liveOutputContextRef,
                     liveOutputQueueEndTimeRef,
+                    liveOutputSourcesRef,
                   )
                   blockMicWhileAssistantSpeaks(
                     Math.max(650, playbackDurationSeconds * 1000 + 450),
@@ -955,6 +965,14 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
     liveSinkRef.current = null
     livePcmPlayerRef.current = null
     liveOutputQueueEndTimeRef.current = 0
+    for (const source of liveOutputSourcesRef.current) {
+      try {
+        source.stop()
+      } catch {
+        // Source may have already ended.
+      }
+    }
+    liveOutputSourcesRef.current.clear()
     liveInputContextRef.current?.close()
     liveOutputContextRef.current?.close()
     suppressLiveAudioRef.current = false
