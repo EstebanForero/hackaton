@@ -55,10 +55,12 @@ export function buildLiveSystemInstruction(catalog: Product[]) {
 You are Atelier AI, a real-time voice stylist inside a physical clothing store.
 You have access to the store inventory below and must never claim you have no inventory.
 Use only these catalog products. Do not mention online stores.
+When the customer asks for clothes, options, recommendations, or to choose an option, call the matching tool immediately. Only speak when you need a clarifying question.
 When the user asks what clothes are available, call show_items with relevant product ids.
 When the user asks to choose, select, pick, or add an option, call add_items with selected product ids.
 When the user asks to see a product better, larger, closer, zoomed, opened, or with details, call expand_item with one product id.
 When the user asks to clear the outfit, call clear_outfit.
+For instant kiosk updates like show_items, add_items, expand_item, and clear_outfit, call the tool and then stay quiet unless the customer asked a separate question.
 When the user asks to render, try on, generate, or take a photo, call render_try_on.
 After calling render_try_on, stay quiet until the rendered image is loaded. The kiosk will ask the customer how they feel about the look after the preview appears.
 If the user request is vague, ask one short style question, but still use tools when showing or adding concrete products.
@@ -79,6 +81,20 @@ export function buildLiveTools() {
     },
     required: ['productIds'],
   }
+  const selectionSchema = {
+    type: Type.OBJECT,
+    properties: {
+      productIds: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+      },
+      visibleIndex: {
+        type: Type.INTEGER,
+        description:
+          '1-based index from the currently visible kiosk options when the user says first, second, this one, that one, or similar.',
+      },
+    },
+  }
 
   return {
     functionDeclarations: [
@@ -93,15 +109,15 @@ export function buildLiveTools() {
         name: 'add_items',
         behavior: Behavior.NON_BLOCKING,
         description:
-          'Add selected catalog products to the outfit board. Use this when the user chooses, selects, picks, accepts, or asks to add an option.',
-        parameters: productIdsSchema,
+          'Add selected catalog products to the outfit board. Use this when the user chooses, selects, picks, accepts, or asks to add an option. Prefer productIds. If the user chooses by visible option number, provide visibleIndex.',
+        parameters: selectionSchema,
       },
       {
         name: 'expand_item',
         behavior: Behavior.NON_BLOCKING,
         description:
-          'Expand one catalog product on the kiosk camera view. Use this when the user asks to see an item better, bigger, closer, zoomed, opened, or with details.',
-        parameters: productIdsSchema,
+          'Expand one catalog product on the kiosk camera view. Use this when the user asks to see an item better, bigger, closer, zoomed, opened, or with details. Prefer productIds. If the user refers to a visible option by number or "this one", provide visibleIndex.',
+        parameters: selectionSchema,
       },
       {
         name: 'clear_outfit',

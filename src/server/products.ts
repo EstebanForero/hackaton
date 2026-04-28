@@ -84,13 +84,19 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
       throw new Error('Products not found')
     }
 
-    const generationPrompt = buildTryOnPrompt(selectedProducts, data.prompt)
+    const productsById = new Map(
+      selectedProducts.map((product) => [product.id, product]),
+    )
+    const orderedProducts = data.productIds
+      .map((productId) => productsById.get(productId))
+      .filter((product): product is Product => Boolean(product))
+    const generationPrompt = buildTryOnPrompt(orderedProducts, data.prompt)
 
     if (!process.env.GEMINI_API_KEY) {
       return {
         status: 'mock' as const,
-        products: selectedProducts,
-        references: buildTryOnReferences(selectedProducts),
+        products: orderedProducts,
+        references: buildTryOnReferences(orderedProducts),
         imageUrl: data.photoDataUrl,
         message:
           'GEMINI_API_KEY is not configured. Returning the captured photo and a prompt that can be sent to Gemini/Nano Banana.',
@@ -103,7 +109,7 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
       const referenceImages = await Promise.all(
-        selectedProducts.map((product) => fetchImageAsInlineData(product.imageUrl)),
+        orderedProducts.map((product) => fetchImageAsInlineData(product.imageUrl)),
       )
       const userPhoto = parseImageDataUrl(data.photoDataUrl)
       const response = await ai.models.generateContent({
@@ -128,7 +134,7 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
                   'CUSTOMER_CAMERA_IMAGE_END. The following images are exact selected garment references only. Do not use the people, bodies, poses, faces, skin, hair, or backgrounds from reference images. Do not invent product design, pattern, color, logos, pockets, or silhouette beyond these references.',
               },
               ...referenceImages.flatMap((image, index) => {
-                const product = selectedProducts[index]
+                const product = orderedProducts[index]
 
                 return [
                   {
@@ -165,8 +171,8 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
       if (!generatedImage?.data) {
         return {
           status: 'failed' as const,
-          products: selectedProducts,
-          references: buildTryOnReferences(selectedProducts),
+          products: orderedProducts,
+          references: buildTryOnReferences(orderedProducts),
           imageUrl: data.photoDataUrl,
           message:
             'Gemini image generation did not return an edited image. Showing the source photo instead.',
@@ -178,10 +184,10 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
 
       return {
         status: 'generated' as const,
-        products: selectedProducts,
-        references: buildTryOnReferences(selectedProducts),
+        products: orderedProducts,
+        references: buildTryOnReferences(orderedProducts),
         imageUrl: `data:${generatedImage.mimeType ?? 'image/png'};base64,${generatedImage.data}`,
-        message: `Generated virtual try-on with ${getImageModel()} using your camera photo and ${selectedProducts.length} garment reference image${selectedProducts.length === 1 ? '' : 's'}.`,
+        message: `Generated virtual try-on with ${getImageModel()} using your camera photo and ${orderedProducts.length} garment reference image${orderedProducts.length === 1 ? '' : 's'}.`,
         chatModel: getChatModel(),
         imageModel: getImageModel(),
         generationPrompt,
@@ -190,8 +196,8 @@ export const createVirtualTryOn = createServerFn({ method: 'POST' })
       const reason = error instanceof Error ? error.message : 'unknown error'
       return {
         status: 'failed' as const,
-        products: selectedProducts,
-        references: buildTryOnReferences(selectedProducts),
+        products: orderedProducts,
+        references: buildTryOnReferences(orderedProducts),
         imageUrl: data.photoDataUrl,
         message: `Gemini image generation failed: ${reason}. Showing the source photo instead.`,
         chatModel: getChatModel(),

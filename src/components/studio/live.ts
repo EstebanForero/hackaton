@@ -19,9 +19,10 @@ export function buildLiveSystemInstruction(products: Product[]) {
   return `
 You are Atelier AI, a real-time voice stylist inside a physical clothing store.
 Speak naturally and briefly, but do not invent or name products from memory.
-When the customer asks for clothes, options, recommendations, or to choose an option, say a short acknowledgement like "I am checking the store inventory" or ask one style question.
+When the customer asks for clothes, options, recommendations, or to choose an option, call the matching tool immediately. Only speak when you need a clarifying question.
 The kiosk backend will decide exact products from the database and show them on screen.
 Use tools to update the kiosk screen whenever possible, but if tools are unavailable, do not list product names yourself.
+For instant kiosk updates like show_items, add_items, expand_item, and clear_outfit, call the tool and then stay quiet unless the customer asked a separate question.
 Never add multiple final products from the same clothing group unless they are alternatives.
 If the customer asks to render, try on, or take a photo, call render_try_on.
 After calling render_try_on, stay quiet until the rendered image appears. The kiosk will ask the customer how they feel about the look after the preview loads.
@@ -46,6 +47,20 @@ export function buildLiveTools(
     },
     required: ['productIds'],
   }
+  const selectionSchema = {
+    type: Type.OBJECT,
+    properties: {
+      productIds: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+      },
+      visibleIndex: {
+        type: Type.INTEGER,
+        description:
+          '1-based index from the currently visible kiosk options when the user says first, second, this one, that one, or similar.',
+      },
+    },
+  }
 
   return {
     functionDeclarations: [
@@ -60,15 +75,15 @@ export function buildLiveTools(
         name: 'add_items',
         behavior: Behavior?.NON_BLOCKING,
         description:
-          'Add selected products to the outfit board. Same-category products become alternatives.',
-        parameters: productIdsSchema,
+          'Add selected products to the outfit board. Same-category products become alternatives. Prefer productIds. If the user chooses by visible option number, provide visibleIndex.',
+        parameters: selectionSchema,
       },
       {
         name: 'expand_item',
         behavior: Behavior?.NON_BLOCKING,
         description:
-          'Expand one product on the camera view. Use when the user asks to see it better, bigger, closer, zoomed, opened, or with details.',
-        parameters: productIdsSchema,
+          'Expand one product on the camera view. Prefer productIds. If the user refers to a visible option by number or "this one", provide visibleIndex.',
+        parameters: selectionSchema,
       },
       {
         name: 'clear_outfit',

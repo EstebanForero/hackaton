@@ -525,12 +525,12 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
     (prompt: string, immediateProducts: Product[] = []) => {
       const photoDataUrl = capturePhoto()
       const finalOutfit = buildRenderableOutfit(
-        selectedOutfit.length ? selectedOutfit : selectedOutfitRef.current,
+        selectedOutfitRef.current,
         immediateProducts,
       )
 
       if (!photoDataUrl || !finalOutfit.length) {
-        const selectedCount = selectedOutfit.length || selectedOutfitRef.current.length
+        const selectedCount = selectedOutfitRef.current.length
         const immediateCount = immediateProducts.length
         const cameraState = cameraReadyRef.current ? 'ready' : 'not ready'
         const message = !photoDataUrl
@@ -565,7 +565,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
         photoDataUrl,
       })
     },
-    [appendLiveEvent, capturePhoto, selectedOutfit, speak, tryOnMutation],
+    [appendLiveEvent, capturePhoto, speak, tryOnMutation],
   )
 
   const sendLiveToolResponse = React.useCallback(
@@ -599,15 +599,37 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       const productIds = Array.isArray(functionCall.args?.productIds)
         ? functionCall.args.productIds.filter((id): id is string => typeof id === 'string')
         : []
-      const matchedProducts = products.filter((product) => productIds.includes(product.id))
-      const callKey = `${functionCall.name}-${productIds.join(',')}`
+      const visibleIndex =
+        typeof functionCall.args?.visibleIndex === 'number'
+          ? functionCall.args.visibleIndex
+          : undefined
+      const productsById = new Map(products.map((product) => [product.id, product]))
+      const matchedProducts = productIds
+        .map((productId) => productsById.get(productId))
+        .filter((product): product is Product => Boolean(product))
+      const visibleIndexedProduct =
+        visibleIndex && visibleIndex > 0
+          ? visibleItemsRef.current[visibleIndex - 1]
+          : undefined
+      const resolvedProducts =
+        matchedProducts.length || functionCall.name === 'show_items'
+          ? matchedProducts
+          : visibleIndexedProduct
+            ? [visibleIndexedProduct]
+            : visibleItemsRef.current.length === 1
+              ? [visibleItemsRef.current[0]]
+              : []
+      const resolvedProductIds = resolvedProducts.map((product) => product.id)
+      const callTargetKey =
+        resolvedProductIds.join(',') || productIds.join(',') || String(visibleIndex ?? 'none')
+      const callKey = `${functionCall.name}-${callTargetKey}`
       const now = Date.now()
       const lastCallAt = recentLiveToolCallsRef.current.get(callKey) ?? 0
       const isImmediateDuplicate = now - lastCallAt < 1200
 
       if (isImmediateDuplicate) {
         appendLiveEvent(`Skipped immediate duplicate tool effect: ${functionCall.name}.`)
-        sendLiveToolResponse(functionCall, productIds, {
+        sendLiveToolResponse(functionCall, resolvedProductIds, {
           ok: true,
           duplicate: true,
           skippedEffect: true,
@@ -623,15 +645,15 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       if (functionCall.name === 'show_items') {
         setExpandedProduct(null)
         setTryOnResult(null)
-        setVisibleItems(matchedProducts)
+        setVisibleItems(resolvedProducts)
       }
 
       if (functionCall.name === 'add_items') {
-        addMatchesToOutfit(matchedProducts, 'Selected by Gemini Live.')
+        addMatchesToOutfit(resolvedProducts, 'Selected by Gemini Live.')
       }
 
       if (functionCall.name === 'expand_item') {
-        setExpandedProduct(matchedProducts[0] ?? null)
+        setExpandedProduct(resolvedProducts[0] ?? null)
       }
 
       if (functionCall.name === 'clear_outfit') {
@@ -642,10 +664,18 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       }
 
       if (functionCall.name === 'render_try_on') {
-        requestTryOn('Render the current live-selected outfit.', matchedProducts)
+        requestTryOn('Render the current live-selected outfit.', resolvedProducts)
       }
 
-      sendLiveToolResponse(functionCall, productIds, { ok: true }, 'WHEN_IDLE')
+      appendLiveEvent(
+        `${functionCall.name} resolved ${resolvedProductIds.length} product(s): ${resolvedProductIds.join(', ') || 'none'}.`,
+      )
+      sendLiveToolResponse(
+        functionCall,
+        resolvedProductIds,
+        { ok: true, visibleIndex: visibleIndex ?? null },
+        'SILENT',
+      )
     },
     [addMatchesToOutfit, appendLiveEvent, products, requestTryOn, sendLiveToolResponse],
   )
