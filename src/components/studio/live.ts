@@ -37,7 +37,11 @@ ${catalog}
 export function buildLiveTools(
   Type: typeof import('@google/genai').Type,
   Behavior?: typeof import('@google/genai').Behavior,
+  options: { nonBlocking?: boolean } = {},
 ) {
+  const nonBlockingBehavior = options.nonBlocking ? Behavior?.NON_BLOCKING : undefined
+  const withBehavior = <T extends Record<string, unknown>>(tool: T) =>
+    nonBlockingBehavior ? { ...tool, behavior: nonBlockingBehavior } : tool
   const productIdsSchema = {
     type: Type.OBJECT,
     properties: {
@@ -65,46 +69,41 @@ export function buildLiveTools(
 
   return {
     functionDeclarations: [
-      {
+      withBehavior({
         name: 'show_items',
-        behavior: Behavior?.NON_BLOCKING,
         description:
           'Show products on the kiosk screen as search results or alternatives.',
         parameters: productIdsSchema,
-      },
-      {
+      }),
+      withBehavior({
         name: 'add_items',
-        behavior: Behavior?.NON_BLOCKING,
         description:
           'Add selected products to the outfit board. Same-category products become alternatives. Prefer productIds. If the user chooses by visible option number, provide visibleIndex.',
         parameters: selectionSchema,
-      },
-      {
+      }),
+      withBehavior({
         name: 'expand_item',
-        behavior: Behavior?.NON_BLOCKING,
         description:
           'Expand one product on the camera view. Prefer productIds. If the user refers to a visible option by number or "this one", provide visibleIndex.',
         parameters: selectionSchema,
-      },
-      {
+      }),
+      withBehavior({
         name: 'clear_outfit',
-        behavior: Behavior?.NON_BLOCKING,
         description: 'Clear the current outfit board.',
         parameters: {
           type: Type.OBJECT,
           properties: {},
         },
-      },
-      {
+      }),
+      withBehavior({
         name: 'render_try_on',
-        behavior: Behavior?.NON_BLOCKING,
         description:
           'Take the current camera frame and generate the try-on using the selected outfit.',
         parameters: {
           type: Type.OBJECT,
           properties: {},
         },
-      },
+      }),
     ],
   }
 }
@@ -131,4 +130,8 @@ export function buildLiveRealtimeInputConfig({
     activityHandling: ActivityHandling.NO_INTERRUPTION,
     turnCoverage: TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
   }
+}
+
+export function supportsNonBlockingLiveTools(model: string) {
+  return !model.startsWith('gemini-3.1-')
 }

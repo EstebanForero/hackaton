@@ -8,6 +8,7 @@
     "build": "vite build && tsc --noEmit",
     "preview": "vite preview",
     "start": "node .output/server/index.mjs",
+    "check:gemini-models": "tsx scripts/checkGeminiModels.ts",
     "db:bootstrap": "bun src/db/bootstrap.ts",
     "db:migrate": "bun src/db/migrate.ts",
     "db:seed": "bun src/db/seed.ts",

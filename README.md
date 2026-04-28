@@ -48,14 +48,17 @@ mount layouts.
 
 The app separates model responsibilities:
 
-- `GEMINI_CHAT_MODEL=gemini-2.5-flash` for stylist reasoning, search planning,
+- `GEMINI_CHAT_MODEL=gemini-3-flash-preview` for stylist reasoning, search planning,
   outfit grouping, and tool decisions.
-- `GEMINI_LIVE_MODEL=gemini-2.5-flash-native-audio-preview-12-2025` for
-  real-time Live API voice sessions. This is a Preview native-audio model.
-- `GEMINI_IMAGE_MODEL=gemini-2.5-flash-image` for camera-photo virtual try-on.
-- `GEMINI_TTS_MODEL=gemini-2.5-flash-preview-tts` for optional model-spoken
+- `GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview` for real-time Live API voice
+  sessions. This model uses synchronous Live function calling.
+- `GEMINI_IMAGE_MODEL=gemini-3.1-flash-image-preview` for camera-photo virtual try-on.
+- `GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview` for optional model-spoken
   replies. Gemini TTS is currently Preview, so browser speech synthesis remains
   the fallback.
+
+Run `npm run check:gemini-models` to verify the configured Gemini model IDs and
+basic chat, Live token, image, and TTS calls against the API.
 
 Without `GEMINI_API_KEY`, the try-on endpoint returns the captured photo and the
 exact generation prompt instead of calling an external model.

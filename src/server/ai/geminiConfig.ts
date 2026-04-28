@@ -41,20 +41,44 @@ export function buildRealtimeInputConfig(
 }
 
 export function getChatModel() {
-  return process.env.GEMINI_CHAT_MODEL ?? 'gemini-2.5-flash'
+  return normalizeGeminiModel(
+    process.env.GEMINI_CHAT_MODEL,
+    'gemini-3-flash-preview',
+  )
 }
 
 export function getLiveModel() {
-  return (
-    process.env.GEMINI_LIVE_MODEL ??
-    'gemini-2.5-flash-native-audio-preview-12-2025'
+  return normalizeGeminiModel(
+    process.env.GEMINI_LIVE_MODEL,
+    'gemini-3.1-flash-live-preview',
   )
 }
 
 export function getImageModel() {
-  return process.env.GEMINI_IMAGE_MODEL ?? 'gemini-2.5-flash-image'
+  return normalizeGeminiModel(
+    process.env.GEMINI_IMAGE_MODEL,
+    'gemini-3.1-flash-image-preview',
+  )
 }
 
 export function getTtsModel() {
-  return process.env.GEMINI_TTS_MODEL ?? 'gemini-2.5-flash-preview-tts'
+  return normalizeGeminiModel(
+    process.env.GEMINI_TTS_MODEL,
+    'gemini-3.1-flash-tts-preview',
+  )
+}
+
+export function supportsNonBlockingLiveTools(model: string) {
+  return !model.startsWith('gemini-3.1-')
+}
+
+function normalizeGeminiModel(model: string | undefined, fallback: string) {
+  if (!model) return fallback
+
+  const aliases: Record<string, string> = {
+    'gemini-3-flash': 'gemini-3-flash-preview',
+    'gemini-3-flash-live-preview': 'gemini-3.1-flash-live-preview',
+  }
+
+  return aliases[model] ?? model
 }

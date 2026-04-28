@@ -29,6 +29,7 @@ import {
   buildLiveRealtimeInputConfig,
   buildLiveSystemInstruction,
   buildLiveTools,
+  supportsNonBlockingLiveTools,
 } from './studio/live'
 import { speakAssistantReply } from './studio/speech'
 import type {
@@ -79,6 +80,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   const awaitingTryOnFeedbackRef = React.useRef(false)
   const recentLiveAudioChunksRef = React.useRef(new Map<string, number>())
   const recentLiveToolCallsRef = React.useRef(new Map<string, number>())
+  const liveSupportsNonBlockingToolsRef = React.useRef(false)
   const audioChunksRef = React.useRef<BlobPart[]>([])
   const micTestRecorderRef = React.useRef<MediaRecorder | null>(null)
   const micTestChunksRef = React.useRef<BlobPart[]>([])
@@ -704,7 +706,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
         functionCall,
         resolvedProductIds,
         { ok: true, visibleIndex: visibleIndex ?? null },
-        'SILENT',
+        liveSupportsNonBlockingToolsRef.current ? 'SILENT' : undefined,
       )
     },
     [addMatchesToOutfit, appendLiveEvent, products, requestTryOn, sendLiveToolResponse, speak],
@@ -752,6 +754,9 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
       liveOutputQueueEndTimeRef.current = outputContext.currentTime
       recentLiveToolCallsRef.current.clear()
       recentLiveAudioChunksRef.current.clear()
+      liveSupportsNonBlockingToolsRef.current = supportsNonBlockingLiveTools(
+        tokenResult.model,
+      )
 
       const session = await ai.live.connect({
         model: tokenResult.model,
@@ -768,7 +773,11 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
           systemInstruction: {
             parts: [{ text: buildLiveSystemInstruction(products) }],
           },
-          tools: [buildLiveTools(Type, Behavior)],
+          tools: [
+            buildLiveTools(Type, Behavior, {
+              nonBlocking: liveSupportsNonBlockingToolsRef.current,
+            }),
+          ],
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: tokenResult.voice },
@@ -1015,6 +1024,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
     assistantSpeakingUntilRef.current = 0
     recentLiveToolCallsRef.current.clear()
     recentLiveAudioChunksRef.current.clear()
+    liveSupportsNonBlockingToolsRef.current = false
     liveInputContextRef.current = null
     liveOutputContextRef.current = null
     micStreamRef.current?.getTracks().forEach((track) => track.stop())

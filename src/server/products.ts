@@ -12,6 +12,7 @@ import {
   getImageModel,
   getLiveModel,
   getTtsModel,
+  supportsNonBlockingLiveTools,
 } from './ai/geminiConfig'
 import {
   fetchImageAsInlineData,
@@ -374,7 +375,11 @@ export const createLiveSessionToken = createServerFn({ method: 'POST' })
             systemInstruction: {
               parts: [{ text: buildLiveSystemInstruction(catalog) }],
             },
-            tools: [buildLiveTools()],
+            tools: [
+              buildLiveTools({
+                nonBlocking: supportsNonBlockingLiveTools(model),
+              }),
+            ],
           },
         },
         httpOptions: {

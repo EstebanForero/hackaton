@@ -72,7 +72,10 @@ ${buildCatalogLines(catalog)}
 `.trim()
 }
 
-export function buildLiveTools() {
+export function buildLiveTools(options: { nonBlocking?: boolean } = {}) {
+  const nonBlockingBehavior = options.nonBlocking ? Behavior.NON_BLOCKING : undefined
+  const withBehavior = <T extends Record<string, unknown>>(tool: T) =>
+    nonBlockingBehavior ? { ...tool, behavior: nonBlockingBehavior } : tool
   const productIdsSchema = {
     type: Type.OBJECT,
     properties: {
@@ -100,46 +103,41 @@ export function buildLiveTools() {
 
   return {
     functionDeclarations: [
-      {
+      withBehavior({
         name: 'show_items',
-        behavior: Behavior.NON_BLOCKING,
         description:
           'Show specific store catalog products on the kiosk screen. Use this for availability, options, recommendations, search results, and alternatives.',
         parameters: productIdsSchema,
-      },
-      {
+      }),
+      withBehavior({
         name: 'add_items',
-        behavior: Behavior.NON_BLOCKING,
         description:
           'Add selected catalog products to the outfit board. Use this when the user chooses, selects, picks, accepts, or asks to add an option. Prefer productIds. If the user chooses by visible option number, provide visibleIndex.',
         parameters: selectionSchema,
-      },
-      {
+      }),
+      withBehavior({
         name: 'expand_item',
-        behavior: Behavior.NON_BLOCKING,
         description:
           'Expand one catalog product on the kiosk camera view. Use this when the user asks to see an item better, bigger, closer, zoomed, opened, or with details. Prefer productIds. If the user refers to a visible option by number or "this one", provide visibleIndex.',
         parameters: selectionSchema,
-      },
-      {
+      }),
+      withBehavior({
         name: 'clear_outfit',
-        behavior: Behavior.NON_BLOCKING,
         description: 'Clear the current outfit board.',
         parameters: {
           type: Type.OBJECT,
           properties: {},
         },
-      },
-      {
+      }),
+      withBehavior({
         name: 'render_try_on',
-        behavior: Behavior.NON_BLOCKING,
         description:
           'Render the current selected outfit on the customer using the camera photo.',
         parameters: {
           type: Type.OBJECT,
           properties: {},
         },
-      },
+      }),
     ],
   }
 }
