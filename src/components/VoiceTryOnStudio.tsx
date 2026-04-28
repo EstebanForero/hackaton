@@ -148,6 +148,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   } | null>(null)
   const [debugOpen, setDebugOpen] = React.useState(false)
   const [optionsOpen, setOptionsOpen] = React.useState(false)
+  const [bigScreenMode, setBigScreenMode] = React.useState(false)
   const [voiceDebugInfo, setVoiceDebugInfo] =
     React.useState<VoiceDebugInfo | null>(null)
   const [speechStatus, setSpeechStatus] = React.useState(
@@ -926,7 +927,7 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
   }, [stopLiveSession])
 
   return (
-    <section className="studio-shell">
+    <section className={`studio-shell ${bigScreenMode ? 'big-screen' : ''}`}>
       <div className="camera-panel">
         <video ref={videoRef} autoPlay muted playsInline suppressHydrationWarning />
         <div className="futuristic-grid" aria-hidden="true" />
@@ -949,6 +950,13 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
             <strong>{alwaysListening ? 'Gemini Live active' : 'Gemini Live ready'}</strong>
             <span>{liveStatus}</span>
           </div>
+          <button
+            className="top-options-button"
+            type="button"
+            onClick={() => setBigScreenMode((enabled) => !enabled)}
+          >
+            {bigScreenMode ? 'Normal' : 'Big screen'}
+          </button>
           <button className="top-options-button" type="button" onClick={() => setOptionsOpen(true)}>
             Options
           </button>
@@ -960,10 +968,6 @@ export function VoiceTryOnStudio({ products }: StudioProps) {
               ? `${selectedOutfit.length} outfit item${selectedOutfit.length === 1 ? '' : 's'} selected`
               : 'No outfit selected'}
           </strong>
-        </div>
-        <div className="floating-assistant">
-          <p className="eyebrow">Atelier AI</p>
-          <p>{assistantReply}</p>
         </div>
         {floatingChoices.length || (!selectedOutfit.length && !visibleItems.length) ? (
           <div
